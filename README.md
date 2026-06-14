@@ -340,11 +340,29 @@ The monolithic engine has been decomposed into focused modules:
 
 ## Background
 
-The project thesis is that the most impactful AI is small, specialized, and invisible to the user. Not a chatbot, not a copilot — a 500-parameter network running at 10 Hz, producing a 4-dimensional latent vector that nobody ever sees, but that drives the difference between an entity that *moves* and one that *behaves*.
+The project thesis is that the most impactful AI is small, specialized,
+and invisible to the user. Not a chatbot, not a copilot — a 500-parameter
+network running at 10 Hz, producing a 4-dimensional latent vector that
+nobody ever sees, but that drives the difference between an entity that
+*moves* and one that *behaves*.
 
-The current 2D visualizer shows the engine state: positions, discrete states, soil moisture. The Godot client (v0.1.0) will map those latent vectors to skeletal animation — that's where the thesis becomes visceral. For now, watch the event log and population dynamics. The intelligence is already there; the rendering will catch up.
+### Essays
 
-For the full argument, see ["The Unseen Hand"](https://www.hellolifeforms.com/p/the-unseen-hand).
+The project's design direction is developed across a series of essays:
+
+- ["The Pulse of Līlā"](https://www.hellolifeforms.com/p/the-pulse-of-lila) —
+  the global-mind / local-body architecture; the case for a server that
+  issues intent rather than coordinates.
+- ["The Mathematics of Līlā"](https://www.hellolifeforms.com/p/the-mathematics-of-lila) —
+  the formal model: intent as a vector field, gaits as limit cycles,
+  multi-observer worlds as base/fiber bundles. **The current roadmap
+  targets the architecture described here.**
+- ["The Unseen Hand"](https://www.hellolifeforms.com/p/the-unseen-hand) —
+  on small invisible ML as the driver of felt presence. The thesis
+  behind the shipped motor adapters.
+- ["Life as It Could Be"](https://www.hellolifeforms.com/p/life-as-it-could-be) —
+  on ecological substrates and foundation-model-guided artificial life
+  search. The thesis behind the `search/` subsystem.
 
 ## Ecosystem search
 
@@ -370,9 +388,33 @@ See [`search/README.md`](search/README.md) for setup, output format, and analysi
 
 ## Roadmap
 
-The engine has transitioned from hand-crafted per-species rules to a **trait-based architecture** using allometric scaling laws. Species are defined as functional trait vectors in JSON — body mass, diet type, metabolic class, locomotion mode — and the engine derives all behavior parameters from established ecological scaling laws (Kleiber's Law, metabolic theory of ecology). Adding a wolf means writing a JSON trait vector, not new Python code.
+The current engine encodes ecological knowledge as **per-species rules** —
+each species has hand-tuned guard thresholds, hard-coded interaction logic,
+and type-specific flow equations. This works for five species. It won't
+scale to fifty.
 
-The actor system extracts entity↔entity interactions into pure functions that emit immutable effects. All numeric constants live in `constants.py` as the single source of truth.
+The first architectural shift replaces species-specific rules with
+**functional traits and allometric scaling**. A species becomes a point
+in trait space — body mass, diet type, metabolic class, locomotion mode —
+and the engine derives all behavior parameters from established ecological
+scaling laws (Kleiber's Law, metabolic theory of ecology). Adding a wolf
+means writing a JSON trait vector, not new Python code. The interaction
+templates (herbivory, predation, pollination, decomposition) handle the
+combinatorics.
+
+The second architectural shift is **intent-based motion**. Today the
+engine streams discrete state and positions to the client, which renders
+them flat. The target architecture has the server emit small latent
+vectors — *intent* — and the client integrate a learned body law from
+them. The body is modeled as a bank of coupled Hopf oscillators; style
+becomes the parameter set of that law, and gaits become limit cycles
+of it. Wire cost drops by orders of magnitude because the client holds
+the decoder. In multi-observer worlds, this generalizes into a split
+between a **consensus base** (causal facts that must agree across all
+clients) and a **cosmetic fiber** (the local performance of those facts),
+with reconciliation issued as intent rather than as coordinate snaps.
+See ["The Mathematics of Līlā"](https://www.hellolifeforms.com/p/the-mathematics-of-lila)
+for the full argument.
 
 **Shipped:**
 - Trait-based species architecture — body mass → derived behavior via allometric scaling
@@ -403,6 +445,8 @@ The actor system extracts entity↔entity interactions into pure functions that 
 - Target search — CMA-ES optimization toward text prompts via CLIP
 
 **Medium-term:**
+- Base/fiber architecture for multi-observer worlds — consensus on
+  causal facts, private performance, reconciliation as homing intent
 - Searchable physics — allometric exponents as θ dimensions
 - Godot 3D client with latent-driven skeletal animation
 - Open-ended search — temporal novelty across simulation rollouts
