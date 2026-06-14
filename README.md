@@ -357,10 +357,10 @@ The project's design direction is developed across a series of essays:
   the formal model: intent as a vector field, gaits as limit cycles,
   multi-observer worlds as base/fiber bundles. **The current roadmap
   targets the architecture described here.**
-- ["The Unseen Hand"](https://postcorporate.substack.com/p/the-unseen-hand) —
+- ["The Unseen Hand"](https://www.hellolifeforms.com/p/the-unseen-hand) —
   on small invisible ML as the driver of felt presence. The thesis
   behind the shipped motor adapters.
-- ["Life as It Could Be"](https://postcorporate.substack.com/p/life-as-it-could-be) —
+- ["Life as It Could Be"](https://www.hellolifeforms.com/p/life-as-it-could-be) —
   on ecological substrates and foundation-model-guided artificial life
   search. The thesis behind the `search/` subsystem.
 
