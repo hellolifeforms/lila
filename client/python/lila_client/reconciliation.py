@@ -3,49 +3,77 @@
 When a new tick packet arrives, reconcile client-agency positions
 with server reference positions. Trust the client within bounds;
 gently correct when divergence exceeds expected travel distance.
+
+Each tick, divergent entities get their ref_position enqueued as a
+reconcile target. The agency system then smoothly meanders toward
+that target over the next ~2 seconds. If a new target arrives before
+the old one is reached, the entity transitions smoothly (no snap).
+
+Additionally, a continuous gravity well pulls all entities gently
+toward their ref_position during normal agency, preventing sudden
+direction changes when new tick targets arrive.
 """
 
 from __future__ import annotations
 
-import math
-
-from .constants import SERVER_TICK_RATE, RECONCILE_SNAP_THRESHOLD_MULT, RECONCILE_NUDGE_FACTOR
-
 
 def reconcile(world) -> None:
-    """Reconcile all entities after receiving a new tick packet.
+    """Enqueue reconciliation targets after receiving a new tick packet.
+
+    Does NOT modify positions directly — the agency system at 60fps
+    consumes the queue and moves entities smoothly.
 
     Called once per server tick, not every frame.
     """
+    import math
+
     for ent in world.entities.values():
         if not ent.is_mobile_consumer or not ent.is_alive:
             continue
 
-        # If server acknowledged our deviation, trust it fully — no correction needed
+        # Server acknowledged our deviation — trust it fully.
+        # Clear any pending reconcile targets since server now matches us.
         if ent.ack_received:
-            # Server snapped to our position. Sync client x/z to ref.
-            ent.x = ent.ref_x
-            ent.z = ent.ref_z
-            continue
+            ent._reconcile_queue.clear()
+            ent._reconcile_idx = 0
 
         dx = ent.x - ent.ref_x
         dz = ent.z - ent.ref_z
         divergence = math.sqrt(dx * dx + dz * dz)
 
         if divergence < 0.1:
-            continue  # negligible drift
+            # Negligible drift — nothing to reconcile.
+            # Prune completed targets.
+            ent._reconcile_queue = ent._reconcile_queue[ent._reconcile_idx:]
+            ent._reconcile_idx = 0
+            continue
 
-        # Expected max travel per server tick interval
-        speed = ent.speed or 2.0
-        expected_travel = speed * SERVER_TICK_RATE
+        # Prune completed targets before enqueueing new one.
+        ent._reconcile_queue = ent._reconcile_queue[ent._reconcile_idx:]
+        ent._reconcile_idx = 0
 
-        if divergence <= expected_travel * RECONCILE_SNAP_THRESHOLD_MULT:
-            # Within bounds — soft nudge toward reference (gravity well)
-            ent.x -= dx * RECONCILE_NUDGE_FACTOR
-            ent.z -= dz * RECONCILE_NUDGE_FACTOR
-        else:
-            # Significant divergence — lerp more aggressively toward reference.
-            # The server will likely send _ack on next tick if this persists.
-            snap_factor = 0.5
-            ent.x -= dx * snap_factor
-            ent.z -= dz * snap_factor
+        # Enqueue the ref_position as a reconcile target.
+        # If there's already an unfinished target, append — the agency
+        # system will chain through them smoothly.
+        ent._reconcile_queue.append((ent.ref_x, ent.ref_z))
+
+        # If the queue grew too long (entity falling behind), keep only
+        # the latest target to avoid chasing ghosts.
+        if len(ent._reconcile_queue) > 2:
+            ent._reconcile_queue = [ent._reconcile_queue[-1]]
+
+
+def has_reconcile_target(ent) -> bool:
+    """Check if an entity has pending reconciliation work."""
+    return ent._reconcile_idx < len(ent._reconcile_queue)
+
+
+def get_reconcile_target(ent) -> tuple[float, float]:
+    """Get the current reconcile target (tx, tz) for an entity."""
+    idx = min(ent._reconcile_idx, len(ent._reconcile_queue) - 1)
+    return ent._reconcile_queue[idx]
+
+
+def advance_reconcile(ent) -> None:
+    """Advance to the next target in the queue (called when current is reached)."""
+    ent._reconcile_idx += 1

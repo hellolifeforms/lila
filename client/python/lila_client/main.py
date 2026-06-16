@@ -116,7 +116,7 @@ class LilaClient:
 
             # ── Step local agency (60 Hz, between server ticks) ──
             now = time.monotonic()
-            dt = min((now - last_frame_time) / 1000, 0.05)  # cap at 50ms
+            dt = min(now - last_frame_time, 0.05)  # cap at 50ms
             last_frame_time = now
 
             client_events = step_agency(self.world, dt)

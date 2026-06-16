@@ -307,15 +307,18 @@ def _draw_butterfly(
 
     surf = pygame.Surface((int(wing_span * 2 + 1), int(wing_h * 2 + 1)), pygame.SRCALPHA)
     w2, h2 = surf.get_width() // 2, surf.get_height() // 2
-    # Left wing
+    # Wings: extend vertically from body (compact, not elongated)
     pygame.draw.polygon(surf, (*butterfly_color, alpha),
-                        [(w2, h2), (0, 0), (w2 - int(wing_span * 0.3), int(wing_h * 0.5))])
-    # Right wing
+                        [(w2, h2), (w2 - 2, 1), (w2 + 2, 0),
+                         (w2, int(h2 - wing_h * 0.5))])
     pygame.draw.polygon(surf, (*butterfly_color, alpha),
-                        [(w2, h2), (surf.get_width(), 0),
-                         (w2 + int(wing_span * 0.3), int(wing_h * 0.5))])
+                        [(w2, h2), (w2 - 2, int(surf.get_height() - 1)),
+                         (w2 + 2, surf.get_height()),
+                         (w2, int(h2 + wing_h * 0.5))])
     # Body
     pygame.draw.circle(surf, (122, 90, 143, 255), (w2, h2), 2)
+    # Nose — gives the sprite a visual front so rotation shows direction
+    pygame.draw.circle(surf, (150, 115, 170, 255), (w2 + 3, h2), 1)
 
     # Rotate to face travel direction
     rotated = pygame.transform.rotozoom(surf, math.degrees(-ent.facing_angle), 1.0)

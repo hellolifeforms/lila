@@ -4,6 +4,7 @@ Between server ticks, each mobile entity decides what to do based on:
   - Server intent (state + drives + eligibility flags)
   - Local perception (nearest food, water, threats from world model)
   - Motion latent (modulates speed, hesitation, path curvature)
+  - Gravity well toward server ref_position (continuous pull)
 
 This is the "body" in "server is nervous system, client is body."
 """
@@ -16,7 +17,13 @@ import time
 from typing import Any
 
 from .constants import GRID_SIZE
+from .reconciliation import has_reconcile_target, get_reconcile_target, advance_reconcile
 from .world_model import WorldEntity
+
+# Gravity well: gentle pull toward ref_position, always active.
+# ~0.05 × speed per frame ≈ 3 units/s pull, enough to drift back
+# without overpowering the entity's desired behavior.
+GRAVITY_WELL_FACTOR = 0.05
 
 
 def step_agency(world, dt: float) -> list[dict]:
@@ -37,13 +44,108 @@ def step_agency(world, dt: float) -> list[dict]:
             ent.speed = defn.get("movement_speed", 2.0)
             ent._speed_set = True
 
-        # Evaluate behavior
-        action = evaluate_behavior(ent, world)
-
-        # Execute the action
-        execute_action(ent, action, world, dt, events)
+        # Reconciling entities meander toward their queued target
+        if has_reconcile_target(ent):
+            tx, tz = get_reconcile_target(ent)
+            if _execute_reconcile_meander(ent, tx, tz, world, dt):
+                advance_reconcile(ent)
+        else:
+            # Normal agency: evaluate behavior + gravity well toward ref
+            action = evaluate_behavior(ent, world)
+            execute_action(ent, action, world, dt, events)
+            _apply_gravity_well(ent, world, dt)
 
     return events
+
+
+def _apply_gravity_well(ent: WorldEntity, world, dt: float) -> None:
+    """Gently pull entity toward server ref_position.
+
+    Always active during normal agency. This ensures the entity
+    never drifts too far from the server's expectation, and when
+    a new tick changes the ref, the entity adjusts smoothly rather
+    than making a sudden direction change.
+    """
+    dx = ent.ref_x - ent.x
+    dz = ent.ref_z - ent.z
+    dist = math.sqrt(dx * dx + dz * dz)
+
+    if dist < 0.2:
+        return  # Already close enough
+
+    # Gentle nudge toward ref — additive to normal movement
+    nudge = GRAVITY_WELL_FACTOR * dt
+    ent.x += dx * nudge
+    ent.z += dz * nudge
+    ent.x = clamp(ent.x, GRID_SIZE)
+    ent.z = clamp(ent.z, GRID_SIZE)
+
+
+def _execute_reconcile_meander(
+    ent: WorldEntity,
+    tx: float,
+    tz: float,
+    world,
+    dt: float,
+) -> bool:
+    """Meander a reconciling entity toward its queued target (tx, tz).
+
+    Produces a spiral/circle motion: radial pull toward target combined
+    with a perpendicular wobble. Returns True when the entity has arrived.
+
+    The approach curve accelerates as the entity gets closer — it circles
+    wide at first then tightens into the target, like a bird landing.
+    """
+    dx = tx - ent.x
+    dz = tz - ent.z
+    dist = math.sqrt(dx * dx + dz * dz)
+
+    if dist < 0.5:
+        # Close enough — advance to next target
+        ent.velocity_x = 0
+        ent.velocity_z = 0
+        return True
+
+    nx = dx / dist
+    nz = dz / dist
+
+    # Perpendicular direction (rotate 90°)
+    px = -nz
+    pz = nx
+
+    speed = ent.speed or 2.0
+
+    # Radial step: move toward target
+    radial_step = min(speed * 1.5 * dt, dist)
+
+    # Perpendicular wobble: wide circles that tighten as we approach.
+    # Wobble amplitude scales with distance — large arcs far away,
+    # gentle spirals near the target.
+    wobble_phase = time.monotonic() * 3.0 + _entity_phase(ent.id)
+    wobble_amp = math.sin(wobble_phase) * min(speed * 0.5, dist * 0.3)
+    wobble_step = wobble_amp * dt
+
+    ent.x += nx * radial_step + px * wobble_step
+    ent.z += nz * radial_step + pz * wobble_step
+    ent.x = clamp(ent.x, GRID_SIZE)
+    ent.z = clamp(ent.z, GRID_SIZE)
+
+    # Update velocity and facing
+    ent.velocity_x = nx * speed * 1.5 + px * wobble_amp
+    ent.velocity_z = nz * speed * 1.5 + pz * wobble_amp
+    ent.facing_angle = _lerp_angle(
+        ent.facing_angle, math.atan2(dz, dx), 0.12
+    )
+
+    return False
+
+
+def _entity_phase(eid: str) -> float:
+    """Deterministic per-entity offset for wobble phase."""
+    h = 0
+    for c in eid:
+        h = (h * 31 + ord(c)) & 0xFFFF
+    return h / 65536.0 * 2 * math.pi
 
 
 # ─── Behavior Evaluators ──────────────────────────────────────────────────

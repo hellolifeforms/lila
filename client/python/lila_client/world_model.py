@@ -61,6 +61,11 @@ class WorldEntity:
     # Acknowledgment tracking
     ack_received: bool = False
 
+    # Reconciliation queue — target positions enqueued by reconcile(),
+    # consumed smoothly by the agency system at 60fps.
+    _reconcile_queue: list[tuple[float, float]] = field(default_factory=list)
+    _reconcile_idx: int = 0  # index of current target in the queue
+
     @property
     def is_alive(self) -> bool:
         return self.state not in ("DEAD", "DYING", "DORMANT")

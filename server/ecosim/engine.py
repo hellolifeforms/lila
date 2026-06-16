@@ -985,10 +985,22 @@ class EcosystemEngine:
         """
         result: dict[str, Any] = {}
 
+        # Build a map of species → movement_speed from entity metadata.
+        # Entity metadata can override the trait-derived speed for tuning.
+        _speed_overrides: dict[str, float] = {}
+        for e in self.entities.values():
+            species = e.get("species", "")
+            ms = e.get("metadata", {}).get("movement_speed")
+            if ms:
+                if species not in _speed_overrides or ms > _speed_overrides[species]:
+                    _speed_overrides[species] = ms
+
         for species_id, params in self.compiled.derived_params.items():
+            # Prefer metadata movement_speed override over trait-derived speed
+            speed = _speed_overrides.get(species_id, params.speed)
             entry: dict[str, Any] = {
                 "type": params.entity_class,
-                "movement_speed": round(params.speed, 4),
+                "movement_speed": round(speed, 4),
                 "diet_order": [],
                 "flee_targets": [],
                 "is_pollinator": bool(getattr(params, "floral_affinity", False)),
