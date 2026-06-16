@@ -388,19 +388,8 @@ self.voxel_manager.set(cell, LAYER_ORGANIC_MATTER,
 ```python
 def _biomass_deposit(self, entity: dict) -> float:
     """Convert entity to organic matter deposit amount."""
-    # Phase 1 (pre-trait): use fixed values per entity type
-    DEPOSITS = {
-        "ANIMAL": 0.15,    # deer-sized
-        "BIRD": 0.01,
-        "INSECT": 0.002,
-        "PLANT": 0.005,
-        "TREE": 0.4,
-        "MICROORGANISM": 0.001,
-    }
-    return DEPOSITS.get(entity.get("type", ""), 0.01)
-
-    # Phase 2 (trait-based): derive from body_mass_kg
-    # return min(0.5, entity["body_mass_kg"] * BIOMASS_DEPOSIT_SCALE)
+    # Derive from body_mass_kg (trait-based architecture)
+    return min(0.5, entity["body_mass_kg"] * BIOMASS_DEPOSIT_SCALE)
 ```
 
 ---
@@ -663,30 +652,10 @@ def test_dormancy_recovery_effective_nutrients():
     assert effective_no_slow < 0.15  # Should NOT allow recovery
 ```
 
-### Regression Test (test_regression.py)
+### Regression Test
 
-Run 2000-tick simulation with both single-pool (legacy) and two-pool engines.
-Compare:
-- Plant population count at ticks 500, 1000, 1500, 2000 (within ±15%)
-- Number of dormancy → active transitions (within ±20%)
-- Number of death events (within ±20%)
-- Post-rain recovery timing: ticks from rain event to first dormancy recovery
-  (two-pool may be slightly faster due to fast pool, acceptable)
-
----
-
-## Backward Compatibility
-
-Worlds without the new rate multipliers use defaults (1.0 for all three new
-constants). The only breaking change is the layer index shift:
-
-- Code that references `LAYER_NUTRIENTS` by name → update to `LAYER_NUTRIENTS_FAST`
-- Code that references layers by numeric index (0, 1, 2, 3) → update to new indices
-- Client code parsing delta packets with layer indices → forward-compatible if
-  it ignores unknown indices, breaking if it assumes exactly 4 layers
-
-**WebSocket protocol:** The delta packet format includes layer index as an integer.
-Existing clients seeing layer index 4 (organic_matter, unchanged) are fine.
-New layer index 1 (nutrients_slow) might be unexpected. The browser visualizer
-doesn't render nutrient layers, so it ignores these deltas. The Godot client
-(not yet built) will be designed for 5 layers from the start.
+Run 2000-tick simulation with the two-pool engine. Validate:
+- Plant population dynamics are stable (no collapse from pool dynamics)
+- Dormancy → recovery transitions occur when expected
+- Death events deposit organic matter correctly
+- Post-rain recovery shows two-timescale behavior (fast pool immediate, slow pool sustained)

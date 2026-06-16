@@ -2,7 +2,7 @@
 
 **Status:** Phase 1 ✅ Complete · Phase 2 ✅ Complete · Phase 3 (Distributed Readiness) Pending  
 **Created:** 2026-05-30  
-**Last Updated:** 2026-05-30  
+**Last Updated:** 2026-06-16  
 **Owner:** līlā Ecosystem Engine Team  
 
 ---
@@ -10,24 +10,22 @@
 ## Table of Contents
 
 1. [Executive Summary](#executive-summary)
-2. [Current Architecture Analysis](#current-architecture-analysis)
-3. [Target Architecture Overview](#target-architecture-overview)
-4. [Effects Model — Immutable Delta Descriptions](#effects-model--immutable-delta-descriptions)
-5. [Interaction Actor Protocol](#interaction-actor-protocol)
-6. [Phase 1: Effects Extraction + Interaction Actors ✅ COMPLETE](#phase-1-effects-extraction--interaction-actors-complete)
-7. [Phase 2: Flow + Guard Actors ✅ Complete](#phase-2-flow--guard-actors-complete)
-8. [Phase 3: Distributed Readiness (Future)](#phase-3-distributed-readiness-future)
-9. [Serialization Layer — Pluggable Format Design](#serialization-layer--pluggable-format-design)
-10. [Effect Application Order & Conflict Resolution](#effect-application-order--conflict-resolution)
-11. [File Structure (Current)](#file-structure-current)
-12. [Migration Checklist](#migration-checklist)
-13. [Open Questions](#open-questions)
+2. [Architecture Overview](#architecture-overview)
+3. [Effects Model — Immutable Delta Descriptions](#effects-model--immutable-delta-descriptions)
+4. [Interaction Actor Protocol](#interaction-actor-protocol)
+5. [Phase 1: Effects Extraction + Interaction Actors ✅ COMPLETE](#phase-1-effects-extraction--interaction-actors-complete)
+6. [Phase 2: Flow + Guard Actors ✅ Complete](#phase-2-flow--guard-actors-complete)
+7. [Phase 3: Distributed Readiness (Future)](#phase-3-distributed-readiness-future)
+8. [Serialization Layer — Pluggable Format Design](#serialization-layer--pluggable-format-design)
+9. [Effect Application Order & Conflict Resolution](#effect-application-order--conflict-resolution)
+10. [File Structure](#file-structure)
+11. [Open Questions](#open-questions)
 
 ---
 
 ## Executive Summary
 
-This document describes the three-phase refactoring of the līlā ecosystem engine from its monolithic `EcosystemEngine` class into an **Interaction Actor Model** with an **Immutable Effects System**. The result is:
+This document describes the līlā ecosystem engine's **Interaction Actor Model** with an **Immutable Effects System**. The result is:
 
 - **Distributed-ready**: Effects are immutable data structures that can be serialized, transmitted across network boundaries, and replayed deterministically.
 - **Truly parallel**: All actors run concurrently (read-only state → effects emission), then effects are applied atomically in a single batch pass. No entity mutates another's state during actor execution.
@@ -36,71 +34,59 @@ This document describes the three-phase refactoring of the līlā ecosystem engi
 
 ---
 
-## Current Architecture Analysis
+## Architecture Overview
 
-### `engine.py` (~2353 lines) — Hybrid Automaton with Actor Integration
+### `engine.py` (~782 lines after decomposition) — Thin Orchestrator
 
-The current engine is a single class that owns all simulation state and implements behavior through a **dual-path architecture**:
+The engine coordinates a seven-phase tick loop. All entity behavior flows through the actor system — there is no inline behavior logic in the engine:
 
 ```
-EcosystemEngine (hybrid orchestrator, ~2353 lines)
+EcosystemEngine (thin orchestrator, ~782 lines)
 ├── step() → 7-phase sequential loop over ALL entities
-│   ├── Phase 1: _apply_flow()     → trait-based or legacy flow routing
-│   │   ├── Trait path: diet_type dispatch → _flow_consumer/producer/decomposer
-│   │   └── Legacy path: entity type dispatch → _flow_animal/plant/insect/microorganism
-│   ├── Phase 2: Interactions      → ACTOR-BASED (trait) or inline (legacy)
-│   │   ├── Trait path: actor_registry[species].resolve(ctx) → EffectBus.apply_batch()
-│   │   └── Legacy path: _resolve_interactions(entity) — inline flee/predation/herbivory/pollination
-│   ├── Phase 3: Guards            → trait-based or legacy guard routing
-│   │   ├── Trait path: diet_type dispatch → _guards_consumer/producer/decomposer
-│   │   └── Legacy path: entity type dispatch → _guards_animal/plant/insect/microorganism
-│   ├── Phase 4: Voxel effects     → inline soil mutations
-│   ├── Phase 5: Water/soil evaporation
-│   ├── Phase 6: Motor inference (BYOM)
-│   └── Phase 7: Spawn/Kill (deferred lists)
-├── Actor Registry                 → build_interaction_registry(compiled)
-├── Effect Bus                     → collect, resolve conflicts, apply atomically
-├── Legacy Flow Functions          → _flow_animal, _flow_plant, _flow_insect, _flow_microorganism
-├── Legacy Guard Functions         → _guards_animal, _guards_plant, _guards_insect, _guards_microorganism
-└── Legacy Helpers                 → _find_mate_legacy, _reproduction_event_legacy, etc.
+│   ├── Phase 1: Flow Actors      → flow_actor_registry[species].resolve(ctx) → EffectBus.apply_flow_batch()
+│   ├── Phase 2: Interactions     → actor_registry[species].resolve(ctx) → EffectBus.apply_batch()
+│   ├── Phase 3: Guard Actors     → guard_actor_registry[species].resolve(ctx) → EffectBus.apply_effects_with_om_deposit()
+│   ├── Phase 4: Voxel effects    → SoilDrain/SoilDeposit intents → handlers via EffectBus
+│   ├── Phase 5: World processes  → SoilEvaporation/WaterReplenish intents → handlers via EffectBus
+│   ├── Phase 6: Motor inference  → BYOM adapter (mlp/static/random)
+│   └── Phase 7: Lifecycle        → removals + spawns from deferred lists
+├── Actor Registry                → build_interaction_registry(compiled)
+├── Effect Bus                    → collect, resolve conflicts, apply atomically
+└── Extracted Subsystems
+    ├── LayoutManager (layout.py)        — world loading + randomization
+    ├── SpatialIndex (spatial_index.py)  — neighbor queries (BruteForceSpatialIndex)
+    ├── MovementSystem (movement_system.py) — gate policy + kinematics
+    ├── MovementActor (actors/movement_actors.py) — target selection as pure actor
 ```
 
-### Key Design: Dual-Path Architecture
-
-The engine supports **two parallel execution paths**:
-
-1. **Trait-based path** (new worlds with `species_definitions`): Uses the actor system — actors return immutable Effect objects that are collected then applied atomically. Flow and guards route by `diet_type`.
-2. **Legacy path** (worlds without `species_definitions`): Falls back to inline entity-type-based logic for flow, interactions, and guards. This ensures backward compatibility with all existing world files.
-
-The `_is_legacy` flag determines which path is taken at each phase boundary.
+All worlds require `species_definitions`. Worlds without it fail at init with a clear error.
 
 ---
 
 ## Target Architecture Overview
 
 ```
-EcosystemEngine (thin orchestrator, ~300 lines)
+EcosystemEngine (thin orchestrator, ~782 lines)
 ├── Spatial Index (query layer)
 ├── Entity Registry
 ├── Voxel Grid
 │
 ├── Actor Registry
 │   ├── Interaction Actors (Phase 1 ✅ COMPLETE)
-│   │   ├── FleeActor          → detects predators, emits FleeEffect
-│   │   ├── PredationActor     → detects prey proximity, emits StateVarDelta + DeathEffect
+│   │   ├── FleeActor          → detects predators, emits StateTransition + SetTarget
+│   │   ├── PredationActor     → detects prey proximity, emits StateVarDelta + RemoveEntity
 │   │   ├── HerbivoryActor     → detects plants in range, emits StateVarDelta (both sides)
-│   │   ├── PollinationActor   → detects fruiting flowers, emits StateVarDelta + LingerEffect
-│   │   └── DecompositionActor → detects organic matter, emits VoxelDelta
+│   │   └── PollinationActor   → detects fruiting flowers, emits StateVarDelta + LingerEffect
 │   │
-│   ├── Flow Actors (Phase 2 ⏳ PENDING)
-│   │   ├── ConsumerFlow       → hunger/energy/hydration/repro drive evolution
-│   │   ├── ProducerFlow       → growth/water uptake/Liebig's law
-│   │   └── DecomposerFlow     → activity/population dynamics
+│   ├── Flow Actors (Phase 2 ✅ COMPLETE)
+│   │   ├── ConsumerFlowActor  → hunger/energy/hydration/repro drive evolution
+│   │   ├── ProducerFlowActor  → growth/water uptake/Liebig's law
+│   │   └── DecomposerFlowActor → activity/population dynamics
 │   │
-│   └── Guard Actors (Phase 2 ⏳ PENDING)
-│       ├── ConsumerGuards     → hysteresis-based state transitions
-│       ├── ProducerGuards     → wilting/fruiting/dormancy
-│       └── DecomposerGuards   → active/blooming/dormant
+│   └── Guard Actors (Phase 2 ✅ COMPLETE)
+│       ├── ConsumerGuardActor → hysteresis-based state transitions
+│       ├── ProducerGuardActor → wilting/fruiting/dormancy
+│       └── DecomposerGuardActor → active/blooming/dormant
 │
 ├── Effect Bus (collects, batches, applies effects) ✅ COMPLETE
 │   ├── Collect: gather all effects from all actors this tick
@@ -138,21 +124,21 @@ class EffectType(str, Enum):
     # State variable changes
     STATE_VAR_DELTA = "state_var_delta"       # Increment/decrement a state var
     SET_STATE_VAR = "set_state_var"           # Set to absolute value
-    
+
     # Entity lifecycle
     SPAWN_ENTITY = "spawn_entity"             # Create new entity
     REMOVE_ENTITY = "remove_entity"           # Remove existing entity
     STATE_TRANSITION = "state_transition"     # Change discrete state
-    
+
     # Environmental changes
     VOXEL_DELTA = "voxel_delta"               # Change voxel layer value
     VOXEL_BATCH_DELTA = "voxel_batch_delta"   # Multiple voxel changes at once
-    
+
     # Entity behavior modifiers
     LINGER_EFFECT = "linger_effect"           # Stay at location for N ticks
     CLEAR_TARGET = "clear_target"             # Reset movement target
     SET_TARGET = "set_target"                 # Set new movement target
-    
+
     # Events (for client broadcast)
     EVENT_RECORD = "event_record"             # Log simulation event
 
@@ -162,7 +148,7 @@ class Effect:
     """Base class for all simulation effects."""
     effect_type: EffectType
     tick: int
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dict (used by JSON serializer)."""
         return asdict(self)  # or custom serialization
@@ -198,7 +184,7 @@ class StateTransition(Effect):
 class VoxelDelta(Effect):
     """Change to the voxel grid."""
     effect_type: EffectType = EffectType.VOXEL_DELTA
-    layer: str           # "moisture", "nutrients", "organic_matter"
+    layer: str           # "moisture", "nutrients_fast", "organic_matter"
     x: int
     y: int
     z: int
@@ -315,27 +301,27 @@ from typing import Any
 @dataclass(frozen=True)
 class InteractionContext:
     """Read-only snapshot passed to actors.
-    
+
     Actors receive this context and must not mutate it. All state access
     goes through read-only views or queries.
     """
     tick: int
-    
+
     # The entity this actor is evaluating (read-only view)
     entity: dict[str, Any]
-    
+
     # Trait-derived parameters for the entity's species
-    params: DerivedParams | None  # None in legacy mode
-    
+    params: DerivedParams
+
     # Spatial query results — entities within sensory range
     nearby_entities: list[dict[str, Any]] = field(default_factory=list)
-    
+
     # Read-only voxel access (no mutations through context)
     voxel_grid: VoxelManager = field(repr=False)
-    
+
     # Water sources (read-only)
     water_sources: list[dict[str, Any]] = field(default_factory=list, repr=False)
-    
+
     # Biome and climate configuration
     biome: BiomeConfig
     climate: dict[str, float] = field(default_factory=dict)
@@ -343,20 +329,20 @@ class InteractionContext:
 
 class InteractionActor(ABC):
     """Base protocol for all simulation actors.
-    
+
     Each actor implements resolve() which takes a read-only context
     and returns a list of effects describing what should change.
     The engine's effect bus collects all effects from all actors,
     then applies them atomically.
     """
-    
+
     @abstractmethod
     def resolve(self, ctx: InteractionContext) -> list[Effect]:
         """Evaluate conditions and return effects to apply.
-        
+
         Args:
             ctx: Read-only simulation context snapshot.
-            
+
         Returns:
             List of immutable Effect objects describing state changes.
             Empty list if no action is needed.
@@ -366,14 +352,14 @@ class InteractionActor(ABC):
 
 class FlowActor(InteractionActor):
     """Subtype for continuous flow actors (Phase 2)."""
-    
+
     def resolve(self, ctx: InteractionContext) -> list[Effect]:
         raise NotImplementedError
 
 
 class GuardActor(InteractionActor):
     """Subtype for discrete state transition actors (Phase 2)."""
-    
+
     def resolve(self, ctx: InteractionContext) -> list[Effect]:
         raise NotImplementedError
 ```
@@ -382,25 +368,33 @@ class GuardActor(InteractionActor):
 
 ## Phase 1: Effects Extraction + Interaction Actors ✅ COMPLETE
 
-**Status:** Implemented and tested. All interaction types (flee, predation, herbivory, pollination) are actor-based for trait worlds. Legacy worlds use inline fallback.
+**Status:** Implemented and tested. All interaction types (flee, predation, herbivory, pollination) are actor-based.
 
 ### File Structure (Current)
 
 ```
 ecosim/
-├── engine.py              ← Hybrid orchestrator (~2353 lines)
-│                           ├── Trait path: actor_registry + effect_bus
-│                           └── Legacy path: inline flow/guards/interactions
-├── effects.py             ← ✅ Effect dataclasses + EffectBus (339 lines)
+├── engine.py              ← Thin orchestrator (~782 lines after decomposition)
+├── effects.py             ← ✅ Effect dataclasses + EffectBus (~550 lines)
 ├── actors/                ← ✅ Actor system directory
 │   ├── __init__.py        ← ✅ InteractionContext, InteractionActor base, build_interaction_registry()
-│   └── interaction_actors.py  ← ✅ FleeActor, PredationActor, HerbivoryActor, PollinationActor (481 lines)
-├── interactions.py        ← Unchanged: compile-time templates + InteractionParams
-├── traits.py              ← Unchanged
-├── trait_compiler.py      ← Unchanged
-├── entities.py            ← Unchanged
-├── voxel_manager.py       ← Unchanged
-└── biome.py               ← Unchanged
+│   ├── interaction_actors.py  ← ✅ FleeActor, PredationActor, HerbivoryActor, PollinationActor (~550 lines)
+│   ├── flow_actors.py     ← ✅ ConsumerFlowActor, ProducerFlowActor, DecomposerFlowActor (~580 lines)
+│   ├── guard_actors.py    ← ✅ ConsumerGuardActor, ProducerGuardActor, DecomposerGuardActor (~620 lines)
+│   └── movement_actors.py ← ✅ MovementActor — target selection as effect-emitting actor (~490 lines)
+├── interactions.py        ← Compile-time templates + InteractionParams
+├── traits.py              ← TraitVector, DerivedParams, allometric derivations
+├── trait_compiler.py      ← TraitCompiler, CompiledEcology, compile_world()
+├── entities.py            ← Entity schemas, init_entity()
+├── voxel_manager.py       ← VoxelGrid protocol + UniformVoxelGrid (5 layers)
+├── world_processes.py     ← World-process handlers (evaporation, water replenish, soil drain/deposit)
+├── constants.py           ← Universal simulation constants (single source of truth)
+├── config.py              ← SIM_CONFIG loader
+├── layout.py              ← LayoutManager — world loading + randomization
+├── spatial_index.py       ← SpatialIndex protocol + BruteForceSpatialIndex
+├── movement_system.py     ← MovementSystem — gate policy + kinematics
+├── environment_manager.py ← Environment state encapsulation
+└── biome.py               ← Biome presets → BiomeConfig
 ```
 
 ### PredationActor — Before vs After
@@ -428,31 +422,23 @@ def _predation_event(self, predator: dict, prey: dict, p: DerivedParams) -> None
 
 ```python
 class PredationActor(InteractionActor):
-    """Carnivore/insectivore attempts to catch nearby prey.
-    
-    Detection: predator in HUNTING state with hunger > 0.3, prey within
-    PREDATION_CATCH_DISTANCE (1.5), and species match from interaction matrix.
-    """
-    
+    """Carnivore/insectivore attempts to catch nearby prey."""
+
     def resolve(self, ctx: InteractionContext) -> list[Effect]:
-        if ctx.params is None:
-            return []
-        
         p = ctx.params
         if p.diet_type not in ("carnivore", "insectivore", "omnivore"):
             return []
-        
-        # Check hunting state and hunger threshold
+
         if ctx.entity["state"] != "HUNTING" or ctx.entity["state_vars"]["hunger"] <= 0.3:
             return []
-        
+
         # Find catchable prey from interaction matrix
         prey_species = [
             s for s, _ in self._get_diet_order(p.species_id)
             if any(ix.interaction_type == "predation"
                    for ix in ctx.compiled.get_interactions(p.species_id, s))
         ]
-        
+
         prey = None
         best_dist = float("inf")
         for other in ctx.nearby_entities:
@@ -462,167 +448,28 @@ class PredationActor(InteractionActor):
             if d < PREDATION_CATCH_DISTANCE and d < best_dist:
                 best_dist = d
                 prey = other
-        
+
         if prey is None:
             return []
-        
+
         # Build effects — no mutations, just descriptions of what should happen
         gx, gy, gz = ctx.voxel_grid.world_to_grid(*prey["position"])
         deposit_amount = self._compute_om_deposit(prey, p)
-        
+
         effects: list[Effect] = [
-            StateVarDelta(
-                entity_id=ctx.entity["id"],
-                var_name="hunger",
-                delta=-p.predation_relief,
-                tick=ctx.tick,
-            ),
-            StateVarDelta(
-                entity_id=ctx.entity["id"],
-                var_name="energy",
-                delta=p.predation_energy_gain,
-                tick=ctx.tick,
-            ),
-            SetStateVar(
-                entity_id=prey["id"],
-                var_name="health",
-                value=0.0,
-                tick=ctx.tick,
-            ),
-            StateTransition(
-                entity_id=prey["id"],
-                new_state="DYING",
-                tick=ctx.tick,
-            ),
+            StateVarDelta(entity_id=ctx.entity["id"], var_name="hunger",
+                          delta=-p.predation_relief, tick=ctx.tick),
+            StateVarDelta(entity_id=ctx.entity["id"], var_name="energy",
+                          delta=p.predation_energy_gain, tick=ctx.tick),
+            SetStateVar(entity_id=prey["id"], var_name="health", value=0.0, tick=ctx.tick),
+            StateTransition(entity_id=prey["id"], new_state="DYING", tick=ctx.tick),
             RemoveEntity(entity_id=prey["id"], tick=ctx.tick),
-            VoxelDelta(
-                layer="organic_matter", x=gx, y=gy, z=gz,
-                delta=deposit_amount, tick=ctx.tick,
-            ),
-            EventRecord(
-                event_type="PREDATION",
-                source_id=ctx.entity["id"],
-                target_id=prey["id"],
-                position=list(prey["position"]),
-                tick=ctx.tick,
-            ),
+            VoxelDelta(layer="organic_matter", x=gx, y=gy, z=gz,
+                       delta=deposit_amount, tick=ctx.tick),
+            EventRecord(event_type="PREDATION", source_id=ctx.entity["id"],
+                        target_id=prey["id"], position=list(prey["position"]),
+                        tick=ctx.tick),
         ]
-        
-        return effects
-    
-    @staticmethod
-    def _distance(a: list[float], b: list[float]) -> float:
-        dx = a[0] - b[0]
-        dz = a[2] - b[2]
-        return math.sqrt(dx * dx + dz * dz)
-    
-    @staticmethod
-    def _compute_om_deposit(entity: dict, params: DerivedParams | None) -> float:
-        if params is not None:
-            deposit = min(OM_DEPOSIT_MAX, params.metabolic_rate * OM_DEPOSIT_SCALE)
-            return max(deposit, OM_DEPOSIT_MIN)
-        mass = entity.get("metadata", {}).get("body_mass", 10.0)
-        return min(0.3, mass / 500.0)
-```
-
-### HerbivoryActor — Before vs After
-
-**Before (in engine.py):**
-
-```python
-def _consumption_event(self, herbivore: dict, plant: dict, p: DerivedParams) -> None:
-    """Execute an herbivory event: herbivore grazes on plant."""
-    herbivore["state_vars"]["hunger"] = max(
-        0.0, herbivore["state_vars"]["hunger"] - p.herbivory_relief)
-    plant["state_vars"]["growth"] = max(
-        0.0, plant["state_vars"]["growth"] - p.consumption_damage_growth * self.rate_consumption)
-    plant["state_vars"]["health"] = max(
-        0.0, plant["state_vars"]["health"] - p.consumption_damage_health * self.rate_consumption)
-    self._events.append({
-        "type": "CONSUMPTION", "tick": self.tick,
-        "source_id": herbivore["id"], "target_id": plant["id"],
-        "position": list(plant["position"]),
-    })
-```
-
-**After (HerbivoryActor):**
-
-```python
-class HerbivoryActor(InteractionActor):
-    """Herbivore/omnivore attempts to consume nearby plants.
-    
-    Detection: entity in FORAGING state with hunger > HERBIVORY_MIN_HUNGER,
-    plant within HERBIVORY_CONSUME_DISTANCE (1.0), species match from diet order.
-    """
-    
-    def resolve(self, ctx: InteractionContext) -> list[Effect]:
-        if ctx.params is None:
-            return []
-        
-        p = ctx.params
-        if ctx.entity["state"] != "FORAGING" or ctx.entity["state_vars"]["hunger"] <= HERBIVORY_MIN_HUNGER:
-            return []
-        
-        diet_order = self._get_diet_order(p.species_id)
-        if not diet_order:
-            return []
-        
-        # Find best target by preference ordering
-        best_target = None
-        best_pref = 999
-        
-        for other in ctx.nearby_entities:
-            if other["state"] in ("DEAD", "DYING", "DORMANT"):
-                continue
-            if self._distance(ctx.entity["position"], other["position"]) >= HERBIVORY_CONSUME_DISTANCE:
-                continue
-            
-            other_species = other.get("species", "")
-            for target_species, pref in diet_order:
-                if other_species == target_species:
-                    ixns = ctx.compiled.get_interactions(p.species_id, other_species)
-                    for ix in ixns:
-                        if (ix.interaction_type == "herbivory"
-                                and other.get("state_vars", {}).get("growth", 0) > 0.1
-                                and pref < best_pref):
-                            best_pref = pref
-                            best_target = other
-                    break
-        
-        if best_target is None:
-            return []
-        
-        plant = best_target
-        rate_consumption = self._get_rate_multiplier("consumption")  # from engine config
-        
-        effects: list[Effect] = [
-            StateVarDelta(
-                entity_id=ctx.entity["id"],
-                var_name="hunger",
-                delta=-p.herbivory_relief,
-                tick=ctx.tick,
-            ),
-            SetStateVar(
-                entity_id=plant["id"],
-                var_name="growth",
-                value=max(0.0, plant["state_vars"]["growth"] - p.consumption_damage_growth * rate_consumption),
-                tick=ctx.tick,
-            ),
-            SetStateVar(
-                entity_id=plant["id"],
-                var_name="health",
-                value=max(0.0, plant["state_vars"]["health"] - p.consumption_damage_health * rate_consumption),
-                tick=ctx.tick,
-            ),
-            EventRecord(
-                event_type="CONSUMPTION",
-                source_id=ctx.entity["id"],
-                target_id=plant["id"],
-                position=list(plant["position"]),
-                tick=ctx.tick,
-            ),
-        ]
-        
         return effects
 ```
 
@@ -632,7 +479,6 @@ class HerbivoryActor(InteractionActor):
 
 ```python
 def _resolve_flee(self, e: dict, p: DerivedParams, pos: list[float]) -> None:
-    """Check for nearby predators and trigger flee response."""
     flee_from = self.compiled.get_flee_targets(p.species_id)
     if not flee_from or p.speed <= 0:
         return
@@ -651,174 +497,39 @@ def _resolve_flee(self, e: dict, p: DerivedParams, pos: list[float]) -> None:
 
 ```python
 class FleeActor(InteractionActor):
-    """Check for nearby predators and trigger flee response.
-    
-    Detection: entity has flee targets from interaction matrix, predator
-    within FLEE_TRIGGER_DISTANCE (2.0).
-    """
-    
+    """Check for nearby predators and trigger flee response."""
+
     def resolve(self, ctx: InteractionContext) -> list[Effect]:
-        if ctx.params is None:
-            return []
-        
         p = ctx.params
         if p.speed <= 0:
             return []
-        
+
         flee_targets = self._get_flee_targets(p.species_id)
         if not flee_targets:
             return []
-        
-        # Check each nearby entity for predator match
+
         for other in ctx.nearby_entities:
             if other.get("species", "") in flee_targets:
                 if self._distance(ctx.entity["position"], other["position"]) < FLEE_TRIGGER_DISTANCE:
                     escape_pos = self._flee_direction(
                         ctx.entity["position"], other["position"]
                     )
-                    
                     old_state = ctx.entity["state"]
                     effects: list[Effect] = [
-                        StateTransition(
-                            entity_id=ctx.entity["id"],
-                            new_state="FLEEING",
-                            tick=ctx.tick,
-                        ),
-                        SetTarget(
-                            entity_id=ctx.entity["id"],
-                            position=escape_pos,
-                            tick=ctx.tick,
-                        ),
+                        StateTransition(entity_id=ctx.entity["id"], new_state="FLEEING", tick=ctx.tick),
+                        SetTarget(entity_id=ctx.entity["id"], position=escape_pos, tick=ctx.tick),
                     ]
-                    
                     if old_state != "FLEEING":
                         effects.append(EventRecord(
-                            event_type="STATE_CHANGE",
-                            source_id=ctx.entity["id"],
-                            target_id=None,
-                            position=list(ctx.entity["position"]),
+                            event_type="STATE_CHANGE", source_id=ctx.entity["id"],
+                            target_id=None, position=list(ctx.entity["position"]),
                             extra={"prev_state": old_state, "new_state": "FLEEING"},
-                            tick=ctx.tick,
-                        ))
-                    
-                    return effects  # First predator triggers flee; no need to check others
-        
+                            tick=ctx.tick))
+                    return effects
         return []
 ```
 
-### PollinationActor — Before vs After
-
-**Before (in engine.py):**
-
-```python
-def _pollination_event(self, pollinator: dict, plant: dict,
-                       p: DerivedParams, ix_params) -> None:
-    """Execute a pollination event: pollinator visits flower."""
-    plant["state_vars"]["health"] = min(
-        1.0, plant["state_vars"]["health"] + POLLINATION_HEALTH_BOOST)
-    pollinator["state_vars"]["hunger"] = max(
-        0.0, pollinator["state_vars"]["hunger"] - p.pollination_relief)
-    if "hydration" in pollinator["state_vars"]:
-        pollinator["state_vars"]["hydration"] = min(
-            1.0, pollinator["state_vars"]["hydration"] + p.pollination_relief * 0.5)
-    pollinator["_linger"] = ix_params.linger_ticks
-    pollinator["_target"] = None
-    plant["_pollination_cooldown"] = ix_params.cooldown_ticks
-```
-
-**After (PollinationActor):**
-
-```python
-class PollinationActor(InteractionActor):
-    """Pollinator visits a nearby FRUITING flower.
-    
-    Detection: entity has floral_affinity, plant is in FRUITING state,
-    not on pollination cooldown, species match from interaction matrix.
-    """
-    
-    def resolve(self, ctx: InteractionContext) -> list[Effect]:
-        if ctx.params is None or not ctx.params.floral_affinity:
-            return []
-        
-        # Skip if already lingering at a flower
-        if ctx.entity.get("_linger", 0) > 0:
-            return []
-        
-        for other in ctx.nearby_entities:
-            other_species = other.get("species", "")
-            ixns = ctx.compiled.get_interactions(ctx.params.species_id, other_species)
-            
-            for ix in ixns:
-                if (ix.interaction_type == "pollination"
-                        and other["state"] == "FRUITING"
-                        and other.get("_pollination_cooldown", 0) <= 0):
-                    
-                    plant = other
-                    
-                    # Build visited flowers tracking effect
-                    expiry_tick = ctx.tick + ix.linger_ticks + ix.cooldown_ticks
-                    
-                    effects: list[Effect] = [
-                        SetStateVar(
-                            entity_id=plant["id"],
-                            var_name="health",
-                            value=min(1.0, plant["state_vars"]["health"] + POLLINATION_HEALTH_BOOST),
-                            tick=ctx.tick,
-                        ),
-                        StateVarDelta(
-                            entity_id=ctx.entity["id"],
-                            var_name="hunger",
-                            delta=-ctx.params.pollination_relief,
-                            tick=ctx.tick,
-                        ),
-                    ]
-                    
-                    # Nectar is mostly water — restores hydration for nectarivores
-                    if "hydration" in ctx.entity["state_vars"]:
-                        effects.append(StateVarDelta(
-                            entity_id=ctx.entity["id"],
-                            var_name="hydration",
-                            delta=ctx.params.pollination_relief * 0.5,
-                            tick=ctx.tick,
-                        ))
-                    
-                    # Linger at flower
-                    effects.extend([
-                        LingerEffect(
-                            entity_id=ctx.entity["id"],
-                            linger_ticks=ix.linger_ticks,
-                            tick=ctx.tick,
-                        ),
-                        ClearTarget(entity_id=ctx.entity["id"], tick=ctx.tick),
-                        SetStateVar(
-                            entity_id=plant["id"],
-                            var_name="_pollination_cooldown",  # internal tracking var
-                            value=float(ix.cooldown_ticks),
-                            tick=ctx.tick,
-                        ),
-                    ])
-                    
-                    effects.append(EventRecord(
-                        event_type="POLLINATION",
-                        source_id=ctx.entity["id"],
-                        target_id=plant["id"],
-                        position=list(plant["position"]),
-                        extra={
-                            "linger_ticks": ix.linger_ticks,
-                            "cooldown_ticks": ix.cooldown_ticks,
-                            "expiry_tick": expiry_tick,
-                        },
-                        tick=ctx.tick,
-                    ))
-                    
-                    return effects  # One pollination per tick
-        
-        return []
-```
-
-### Engine Refactoring — Phase 1 `step()` Method (Trait Path)
-
-The engine's step method for trait-based worlds uses the actor system:
+### Engine `step()` — Actor-Based Tick Loop
 
 ```python
 def step(self, dt: float = 0.1) -> dict[str, Any]:
@@ -828,64 +539,42 @@ def step(self, dt: float = 0.1) -> dict[str, Any]:
     self._spawns.clear()
     self._removals.clear()
     self._rebuild_spatial_index()
-    
-    # Phase 1: Flow — trait-based or legacy routing (see below)
-    if self._is_legacy:
-        for entity in list(self.entities.values()):
-            if is_alive(entity):
-                self._apply_flow(entity, dt)
-    else:
-        flow_effects = []
-        for entity in list(self.entities.values()):
-            if not is_alive(entity):
-                continue
-            actor = self._get_flow_actor(entity.get("species"))
-            if actor:
-                ctx = self._build_interaction_context(entity, dt)
-                effects = actor.resolve(ctx)
-                flow_effects.extend(effects)
-        apply_flow_effects(flow_effects, ...)  # (Phase 2 — pending)
-    
-    # Phase 2: Interactions — ACTOR-BASED for trait worlds
-    if self._is_legacy:
-        for entity in list(self.entities.values()):
-            if is_alive(entity):
-                self._resolve_interactions(entity)
-    else:
-        interaction_effects = []
-        for entity in list(self.entities.values()):
-            if not is_alive(entity):
-                continue
-            actor = self.actor_registry.get(entity.get("species"))
-            if actor:
-                ctx = self._build_interaction_context(entity, dt)
-                effects = actor.resolve(ctx)
-                interaction_effects.extend(effects)
-        # Apply interaction effects atomically
-        self.effect_bus.apply_batch(
-            interaction_effects,
-            self.entities, self.voxels,
-            self._spawns, self._removals, self._events,
-        )
-    
-    # Phase 3: Guards — trait-based or legacy routing (see below)
-    if self._is_legacy:
-        for entity in list(self.entities.values()):
-            if is_alive(entity):
-                self._evaluate_guards(entity)
-    else:
-        guard_effects = []
-        for entity in list(self.entities.values()):
-            if not is_alive(entity):
-                continue
-            actor = self._get_guard_actor(entity.get("species"))
-            if actor:
-                ctx = self._build_interaction_context(entity, dt)
-                effects = actor.resolve(ctx)
-                guard_effects.extend(effects)
-        apply_guard_effects(guard_effects, ...)  # (Phase 2 — pending)
-    
-    # Phase 4-7: Voxel effects, water, motor, spawn/kill (unchanged)
+
+    # Phase 1: Flow — actor-based
+    flow_effects = []
+    for entity in list(self.entities.values()):
+        if not is_alive(entity):
+            continue
+        actor = self._get_flow_actor(entity.get("species"))
+        if actor:
+            ctx = self._build_flow_context(entity, dt)
+            flow_effects.extend(actor.resolve(ctx))
+    self.effect_bus.apply_flow_batch(flow_effects, ...)
+
+    # Phase 2: Interactions — actor-based
+    interaction_effects = []
+    for entity in list(self.entities.values()):
+        if not is_alive(entity):
+            continue
+        actors = self.actor_registry.get(entity.get("species"))
+        if actors:
+            ctx = self._build_interaction_context(entity, dt)
+            for actor in actors:
+                interaction_effects.extend(actor.resolve(ctx))
+    self.effect_bus.apply_batch(interaction_effects, self.entities, ...)
+
+    # Phase 3: Guards — actor-based
+    guard_effects = []
+    for entity in list(self.entities.values()):
+        if not is_alive(entity):
+            continue
+        actor = self._get_guard_actor(entity.get("species"))
+        if actor:
+            ctx = self._build_guard_context(entity, dt)
+            guard_effects.extend(actor.resolve(ctx))
+    self.effect_bus.apply_effects_with_om_deposit(guard_effects, ...)
+
+    # Phase 4-7: Voxel effects, world processes, motor inference, lifecycle
     ...
 ```
 
@@ -893,153 +582,49 @@ def step(self, dt: float = 0.1) -> dict[str, Any]:
 
 ```python
 class EffectBus:
-    """Collects effects from all actors and applies them atomically.
-    
-    This is the key mechanism that enables truly parallel actor execution:
-    1. All actors run concurrently (or sequentially, same result) because they only read state.
-    2. Effects are collected into a single list.
-    3. Conflicts are resolved (e.g., entity removed mid-tick).
-    4. Effects are applied in priority order to the shared state.
-    """
-    
-    def apply_batch(
-        self,
-        effects: list[Effect],
-        entities: dict[str, dict],
-        voxels: VoxelManager,
-        spawns: list,
-        removals: list,
-        events: list,
-    ) -> None:
-        """Apply a batch of effects to simulation state.
-        
-        Args:
-            effects: All effects collected from all actors this tick.
-            entities: Entity registry (mutated in place).
-            voxels: Voxel grid manager (mutated in place).
-            spawns: Deferred spawn list (populated by SPAWN_ENTITY effects).
-            removals: Deferred removal list (populated by REMOVE_ENTITY effects).
-            events: Event log for client broadcast.
-        """
-        # Sort by priority — terminal operations first
+    """Collects effects from all actors and applies them atomically."""
+
+    def apply_batch(self, effects, entities, voxels, spawns, removals, events) -> None:
         sorted_effects = sorted(effects, key=lambda e: EFFECT_PRIORITY.get(e.effect_type, 9))
-        
-        # Track which entities are removed this tick (for conflict resolution)
         removed_ids: set[str] = set()
-        
         for effect in sorted_effects:
-            if isinstance(effect, RemoveEntity):
-                removals.append(effect.entity_id)
-                removed_ids.add(effect.entity_id)
-            
-            elif isinstance(effect, StateTransition):
-                entity = entities.get(effect.entity_id)
-                if entity and effect.entity_id not in removed_ids:
-                    old_state = entity["state"]
-                    entity["state"] = effect.new_state
-                    # Emit state change event if different
-                    if old_state != effect.new_state:
-                        events.append({
-                            "type": "STATE_CHANGE", "tick": effect.tick,
-                            "source_id": effect.entity_id, "target_id": None,
-                            "position": entity["position"],
-                            "prev_state": old_state, "new_state": effect.new_state,
-                        })
-            
-            elif isinstance(effect, SetStateVar):
-                entity = entities.get(effect.entity_id)
-                if entity and effect.entity_id not in removed_ids:
-                    entity["state_vars"][effect.var_name] = effect.value
-            
-            elif isinstance(effect, StateVarDelta):
-                entity = entities.get(effect.entity_id)
-                if entity and effect.entity_id not in removed_ids:
-                    sv = entity["state_vars"]
-                    current = sv.get(effect.var_name, 0.0)
-                    new_val = max(0.0, min(1.0, current + effect.delta))
-                    sv[effect.var_name] = new_val
-            
-            elif isinstance(effect, LingerEffect):
-                entity = entities.get(effect.entity_id)
-                if entity and effect.entity_id not in removed_ids:
-                    entity["_linger"] = effect.linger_ticks
-                    entity["velocity"] = [0.0, 0.0, 0.0]
-            
-            elif isinstance(effect, ClearTarget):
-                entity = entities.get(effect.entity_id)
-                if entity and effect.entity_id not in removed_ids:
-                    entity["_target"] = None
-            
-            elif isinstance(effect, SetTarget):
-                entity = entities.get(effect.entity_id)
-                if entity and effect.entity_id not in removed_ids:
-                    entity["_target"] = effect.position
-            
-            elif isinstance(effect, VoxelDelta):
-                voxels.add(effect.layer, effect.x, effect.y, effect.z, effect.delta)
-            
-            elif isinstance(effect, SpawnEntity):
-                spawns.append({
-                    "id": effect.entity_id,
-                    "type": effect.type,
-                    "species": effect.species,
-                    "position": effect.position,
-                    "metadata": effect.metadata,
-                    "state_vars": effect.state_vars,
-                    "skeleton_id": effect.skeleton_id,
-                })
-            
-            elif isinstance(effect, EventRecord):
-                events.append({
-                    "type": effect.event_type,
-                    "tick": effect.tick,
-                    "source_id": effect.source_id,
-                    "target_id": effect.target_id,
-                    "position": effect.position,
-                    **effect.extra,
-                })
+            # ... apply by priority, skip effects on removed entities
+            ...
 ```
 
 ---
 
 ## Phase 2: Flow + Guard Actors ✅ Complete
 
-**Status:** IMPLEMENTED. Flow and guard logic extracted into actor classes for trait-based worlds. Legacy inline functions retained in `engine.py` for backward compatibility (dual-path architecture).
+**Status:** IMPLEMENTED. All flow and guard logic extracted into actor classes. The engine uses actor system exclusively — no inline behavior logic remains.
 
-### File Structure (Current)
+### File Structure
 
 ```
 ecosim/
-├── engine.py              ← ~2465 lines (orchestrator + legacy inline fallbacks)
-├── effects.py             ← 521 lines — EffectBus with apply_flow_batch() + apply_effects_with_om_deposit()
-├── actors/                ← Expanded directory
-│   ├── __init__.py        ← 380 lines — FlowContext/GuardContext, registries, builders ✅
-│   ├── interaction_actors.py  ← FleeActor, PredationActor, HerbivoryActor, PollinationActor ✅
-│   ├── flow_actors.py     ← 518 lines: ConsumerFlowActor, ProducerFlowActor, DecomposerFlowActor ✅
-│   └── guard_actors.py    ← 461 lines: ConsumerGuardActor, ProducerGuardActor, DecomposerGuardActor ✅
-├── interactions.py        ← Unchanged
-├── traits.py              ← Unchanged
-├── trait_compiler.py      ← Unchanged
-├── entities.py            ← Unchanged
-├── voxel_manager.py       ← Unchanged
-└── biome.py               ← Unchanged
+├── engine.py              ← ~782 lines (thin orchestrator)
+├── effects.py             ← ~550 lines — EffectBus with apply_flow_batch() + apply_effects_with_om_deposit()
+├── actors/
+│   ├── __init__.py        ← ~390 lines — FlowContext/GuardContext, registries, builders
+│   ├── interaction_actors.py  ← ~550 lines: FleeActor, PredationActor, HerbivoryActor, PollinationActor
+│   ├── flow_actors.py     ← ~580 lines: ConsumerFlowActor, ProducerFlowActor, DecomposerFlowActor
+│   ├── guard_actors.py    ← ~620 lines: ConsumerGuardActor, ProducerGuardActor, DecomposerGuardActor
+│   └── movement_actors.py ← ~490 lines: MovementActor
+├── constants.py           ← ~160 lines: universal simulation constants
+└── config.py              ← ~140 lines: SIM_CONFIG loader
 ```
 
 ### ConsumerFlowActor — Implementation Summary
 
-**Extracted from**: `engine._flow_consumer()` (~120 lines inline → 85 lines actor + constants)
-
-**Handles**: hunger buildup, energy drain/recovery, hydration loss, drinking recovery, near-water bonus, reproductive drive, health degradation under starvation/dehydration, colony health. Movement toward targets handled by engine after effect application.
+**Handles**: hunger buildup, energy drain/recovery, hydration loss, drinking recovery, near-water bonus, reproductive drive, health degradation under starvation/dehydration, colony health.
 
 **Key design decisions**:
 - `FlowContext` extends `InteractionContext` with `dt`, `rain_ticks_remaining`, and `_entities` (for tree collapse check)
-- All rate constants defined as module-level constants in `flow_actors.py` for easy tuning
+- All rate constants from `constants.py` and `config.py`
 - Biome modifiers and world rate multipliers applied on top of trait-derived base rates
 - Lingering effects (e.g., pollination visits) handled via `LingerEffect` + energy recovery
 
 ### ConsumerGuardActor — Implementation Summary
-
-**Extracted from**: `engine._guards_consumer()` (~80 lines inline → 70 lines actor)
 
 **State machine priority** (highest to lowest):
 1. Death (health ≤ 0 or age ≥ lifespan) → `RemoveEntity` + `EventRecord(DEATH_STARVE/NATURAL)` + `DepositOrganicMatter`
@@ -1053,11 +638,9 @@ ecosim/
 
 **Key design decisions**:
 - `GuardContext` extends `InteractionContext` with `_entities` for mate search and support count
-- Death triggers `RemoveEntity` + `EventRecord` + `DepositOrganicMatter` (OM deposit handled by engine via callback)
-- Reproduction checks proximity to potential mates in full entity list (not just nearby_entities)
+- Death triggers `RemoveEntity` + `EventRecord` + `DepositOrganicMatter`
+- Reproduction checks proximity to potential mates in full entity list
 - State transitions emit `StateTransition` effects; engine applies them and emits STATE_CHANGE events
-
-
 
 ---
 
@@ -1079,20 +662,20 @@ ecosim/
 ```python
 class EffectSerializer(ABC):
     """Protocol for serializing/deserializing effects."""
-    
+
     @abstractmethod
     def serialize(self, effects: list[Effect]) -> bytes | str: ...
-    
+
     @abstractmethod
     def deserialize(self, data: bytes | str) -> list[Effect]: ...
 
 
 class JsonSerializer(EffectSerializer):
     """Default JSON serializer — WebSocket-compatible."""
-    
+
     def serialize(self, effects: list[Effect]) -> str:
         return json.dumps([e.to_dict() for e in effects])
-    
+
     def deserialize(self, data: str) -> list[Effect]:
         raw = json.loads(data)
         # Map dicts back to Effect subclasses by effect_type
@@ -1123,61 +706,35 @@ The `EffectBus.apply_batch()` method sorts effects by priority before applicatio
 
 ---
 
-## File Structure (Current)
+## File Structure
 
 ```
 ecosim/
-├── engine.py              ← Hybrid orchestrator (~2353 lines)
-│                           ├── Trait path: actor_registry + effect_bus for interactions
-│                           └── Legacy path: inline flow/guards/interactions
-├── effects.py             ← ✅ Effect dataclasses + EffectBus (339 lines)
-├── actors/                ← ✅ Actor system directory
-│   ├── __init__.py        ← ✅ InteractionContext, InteractionActor base, build_interaction_registry()
-│   └── interaction_actors.py  ← ✅ FleeActor, PredationActor, HerbivoryActor, PollinationActor (481 lines)
+├── engine.py              ← Thin orchestrator (~782 lines)
+├── effects.py             ← Effect dataclasses + EffectBus (~550 lines)
+├── actors/                ← Actor system
+│   ├── __init__.py        ← Context classes, bases, registries, builders (~390 lines)
+│   ├── interaction_actors.py  ← FleeActor, PredationActor, HerbivoryActor, PollinationActor (~550 lines)
+│   ├── flow_actors.py     ← ConsumerFlowActor, ProducerFlowActor, DecomposerFlowActor (~580 lines)
+│   ├── guard_actors.py    ← ConsumerGuardActor, ProducerGuardActor, DecomposerGuardActor (~620 lines)
+│   └── movement_actors.py ← MovementActor (~490 lines)
 ├── interactions.py        ← Compile-time templates + InteractionParams
 ├── traits.py              ← TraitVector, DerivedParams, allometric derivations
-├── trait_compiler.py      ← TraitCompiler, CompiledEcology, LegacyParams, compile_world()
+├── trait_compiler.py      ← TraitCompiler, CompiledEcology, compile_world()
 ├── entities.py            ← Entity schemas, init_entity(), is_alive(), is_mobile()
-├── voxel_manager.py       ← Sparse 3D grid, delta tracking
+├── voxel_manager.py       ← VoxelGrid protocol + UniformVoxelGrid (5 layers)
+├── world_processes.py     ← World-process handlers dispatched through EffectBus
+├── constants.py           ← Universal simulation constants
+├── config.py              ← SIM_CONFIG loader
+├── layout.py              ← LayoutManager — world loading + randomization
+├── spatial_index.py       ← SpatialIndex protocol + BruteForceSpatialIndex
+├── movement_system.py     ← MovementSystem — gate policy + kinematics
+├── environment_manager.py ← Environment state encapsulation
 ├── biome.py               ← Biome presets → BiomeConfig
 ├── model_adapter.py       ← MotorAdapter protocol, ContextSpec
+├── telemetry.py           ← Telemetry bus — JSONL event stream
 └── worker.py              ← Async WS tick loop + HTTP viz server
 ```
-
----
-
-## Migration Checklist
-
-### Phase 1 ✅ COMPLETE
-- [x] Effect dataclasses defined in `effects.py`
-- [x] EffectBus implemented with priority-based application and conflict resolution
-- [x] InteractionContext dataclass for read-only actor input
-- [x] InteractionActor base class with resolve() protocol
-- [x] FleeActor — detects predators, emits StateTransition + SetTarget effects
-- [x] PredationActor — detects prey proximity, emits StateVarDelta + DeathEffect
-- [x] HerbivoryActor — detects plants in range, emits StateVarDelta (both sides)
-- [x] PollinationActor — detects fruiting flowers, emits StateVarDelta + LingerEffect
-- [x] Actor registry: `build_interaction_registry(compiled)` maps species → actor instances
-- [x] Engine step() uses actor system for trait worlds, inline fallback for legacy
-- [x] Legacy flow functions restored (entity-type-based routing) — commit ec021eb
-- [x] Legacy guard functions restored (entity-type-based routing) — commit ec021eb
-- [x] All 84 tests passing
-
-### Phase 2 ⏳ PENDING
-- [ ] ConsumerFlowActor — hunger/energy/hydration/repro drive evolution
-- [ ] ProducerFlowActor — growth/water uptake/Liebig's law
-- [ ] DecomposerFlowActor — activity/population dynamics
-- [ ] ConsumerGuardActor — hysteresis-based state transitions
-- [ ] ProducerGuardActor — wilting/fruiting/dormancy
-- [ ] DecomposerGuardActor — active/blooming/dormant
-- [ ] Engine step() refactored to use flow/guard actors for trait worlds
-- [ ] Legacy flow/guard functions kept as fallback (already done)
-
-### Phase 3 ⏳ FUTURE
-- [ ] JsonSerializer for Effect objects
-- [ ] Pluggable serializer interface (msgpack/protobuf ready)
-- [ ] Effect log for deterministic replay
-- [ ] Network transport tests
 
 ---
 
@@ -1185,12 +742,10 @@ ecosim/
 
 1. **Flow actor granularity**: Should flow actors emit individual StateVarDelta effects per variable, or batch them into a single SET_STATE_VAR effect? Batching reduces effect count but loses the ability to apply deltas in priority order.
 
-2. **Movement handling**: Movement mutates entity position directly (requires engine-level access). Should this remain inline in the engine, or should a MovementActor emit SetTarget effects that the engine resolves?
+2. **Movement handling**: Movement mutates entity position directly (requires engine-level access). Should this remain inline in the engine, or should a MovementActor emit SetTarget effects that the engine resolves? (MovementActor is now implemented and emits SetTarget/ClearTarget effects.)
 
-3. **Legacy world migration path**: Should we encourage users to add `species_definitions` to their worlds, or is the legacy path sufficient for simple use cases? The dual-path architecture supports both indefinitely.
+3. **Effect bus performance**: For large simulations (1000+ entities), sorting effects by priority each tick adds O(n log n) overhead. Could we batch-sort once per phase instead of per entity?
 
-4. **Effect bus performance**: For large simulations (1000+ entities), sorting effects by priority each tick adds O(n log n) overhead. Could we batch-sort once per phase instead of per entity?
+4. **Deterministic replay**: Should the effect log include the full context snapshot, or just the effects? Full context enables exact replay but increases storage; effects-only is more compact but requires re-running the simulation to reconstruct state.
 
-5. **Deterministic replay**: Should the effect log include the full context snapshot, or just the effects? Full context enables exact replay but increases storage; effects-only is more compact but requires re-running the simulation to reconstruct state.
-
-6. **Actor composition**: Some behaviors span multiple phases (e.g., pollination involves interaction detection + lingering behavior). Should we support composite actors that coordinate across phases, or keep each actor phase-scoped?
+5. **Actor composition**: Some behaviors span multiple phases (e.g., pollination involves interaction detection + lingering behavior). Should we support composite actors that coordinate across phases, or keep each actor phase-scoped?

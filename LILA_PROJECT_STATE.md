@@ -207,7 +207,6 @@ lila/
 │   ├── intent_based_architecture.md # Intent protocol, reconciliation, client agency spec
 │   ├── ECOSIM_PARAMETER_TELEMETRY_SPACE.md # Telemetry streams, parameter space, hybrid BYOM plan
 │   ├── architecture.md
-│   ├── species_spec.md             # 0.1-alpha species + skeleton rigs
 │   ├── lessons_learned.md          # debugging war stories
 │   ├── trait_species_guide.md      # [M2] how biologists add species
 │   └── asal_substrate_guide.md     # [M3] how to use līlā with ASAL
@@ -430,7 +429,7 @@ Five species, two skeletons, five interaction chains:
 
 **Goal:** Replace per-species hard-coded rules with functional trait derivations. Split the single nutrient layer into fast/slow pools with mineralization. All existing tests must still pass. The hybrid automaton tick loop does not change.
 
-**Motivation:** The current engine encodes ecological knowledge as per-species rules. Every new species requires hand-tuned guard thresholds, interaction logic, and flow equations — O(n²) design effort. The trait-based approach encodes knowledge as allometric scaling laws and interaction templates, making new species a JSON definition rather than new code. This is informed by the Madingley General Ecosystem Model (Harfoot et al. 2014) and the Metabolic Theory of Ecology (Brown et al. 2004).
+**Motivation:** The original engine encoded ecological knowledge as per-species rules. Every new species required hand-tuned guard thresholds, interaction logic, and flow equations — O(n²) design effort. The trait-based approach encodes knowledge as allometric scaling laws and interaction templates, making new species a JSON definition rather than new code. This is informed by the Madingley General Ecosystem Model (Harfoot et al. 2014) and the Metabolic Theory of Ecology (Brown et al. 2004).
 
 **Reference documents:** `TRAIT_TRANSITION_PLAN.md` (Phase 1), `TWO_POOL_NUTRIENT_SPEC.md`
 
@@ -484,7 +483,7 @@ The engine was refactored from an authoritative-server model (streaming exact po
 
 ### Completed Steps ✅
 
-#### Step 2.1 — Audit Current Hard-Coded Parameters ✅
+#### Step 2.1 — Audit Original Hard-Coded Parameters ✅
 Extracted every species-specific constant from `engine.py`, `entities.py`, and `biome.py`. Reference table in `TRAIT_TRANSITION_PLAN.md` (Step 1.1). Calibration target for the derivation layer.
 
 **Deliverable:** `ecosim/engine_audit.py`
@@ -503,7 +502,7 @@ Pure functions in `ecosim/traits.py` (stdlib only): `TraitVector → DerivedPara
 - Guard thresholds: hysteresis bands scaled by normalized metabolic rate
 - Consumption rate: proportional to metabolic rate
 
-Calibration constants chosen so that deer traits (80 kg, endotherm, quadruped) produce values matching the current hard-coded parameters within 5%.
+Calibration constants chosen so that deer traits (80 kg, endotherm, quadruped) produce values matching the original hard-coded parameters within 5%.
 
 **Deliverable:** `ecosim/traits.py` — `derive_metabolic_rate()`, `derive_speed()`, `derive_sensory_range()`, `derive_flow_rates()`, `derive_guard_thresholds()`, `derive_consumption_rate()`
 
@@ -570,11 +569,12 @@ When compiled, produce parameters matching the Step 2.1 audit within 5%.
 - JSON parsing: parse_species_from_json, missing key handling, full definitions file
 - Two-pool nutrient flow tests: mineralization, dissolution, leaching fluxes via NutrientPoolDynamicsHandler
 
-### Step 2.9 — Calibration & Regression Testing ❌
-- [ ] Compare DerivedParams output against audit table (manual verification)
-- [ ] `tests/test_nutrients.py` — two-pool nutrient flow tests (blocked on Step 2.6)
-- [ ] `tests/test_regression.py` — 2000-tick baseline comparison
-- [ ] Population curves, state transitions, event counts within ±10–15% of baseline
+### Step 2.9 — Emergent Dynamics Validation ❌
+- [ ] 10,000-tick simulations with all 8 species
+- [ ] Document emergent behaviors: wolf-deer oscillations, trophic cascades,
+  songbird-butterfly predation, mushroom decomposition acceleration
+- [ ] Population curves, state transitions, event counts are reasonable
+  (the trait engine is the baseline — no pre-trait comparison needed)
 
 ### Milestone 2 Deliverables
 **Shipped:**
@@ -584,18 +584,17 @@ When compiled, produce parameters matching the Step 2.1 audit within 5%.
 - Refactored `engine.py` — reads from DerivedParams, dispatches on functional role (~737 lines after decomposition)
 - `ecosim/config.py` — SIM_CONFIG loader with JSON override support (136 lines)
 - `ecosim/environment_manager.py` — Environment state encapsulation (biome, climate, voxels, water sources, rain)
-- Refactored `voxel_manager.py` — 5 layers (nutrients_fast/slow, moisture, temp, OM), legacy alias support (316 lines)
+- Refactored `voxel_manager.py` — 5 layers (nutrients_fast/slow, moisture, temp, OM) (316 lines)
 - Updated `world_processes.py` — NutrientPoolDynamicsHandler + existing handlers (399 lines)
 - `config/sim_config.json` + `config/biomes.json` — external override files
 - `examples/species_definitions.json` — 8 species trait vectors
 - Updated `examples/demo_world.json` — includes `species_definitions`, updated rates, butterfly species rename
 - `tests/test_actors.py` — 70 tests for EffectBus, effect priority, conflict resolution
-- `tests/test_traits.py` — 54 tests for derivations, templates, compiler, backward compat
+- `tests/test_traits.py` — 54 tests for derivations, templates, compiler
 - `tests/test_nutrients.py` — two-pool nutrient flow tests (mineralization, dissolution, leaching)
 - `tests/test_reproduction_actor.py` — reproduction actor behavior tests
 
 **Pending:**
-- `tests/test_regression.py` — 2000-tick baseline comparison
 - `docs/trait_species_guide.md` — how to add species via trait vectors
 
 **New files: 7 (config.py, environment_manager.py, config/sim_config.json, config/biomes.json, test_nutrients.py, test_reproduction_actor.py, species_definitions.json). Modified files: 6. No new external dependencies.**
@@ -644,7 +643,7 @@ All actors are pure functions: read-only context → list of effects. No side ef
 
 **Deliverable:** `ecosim/actors/interaction_actors.py` (554 lines)
 
-#### Step 3.4 — Engine Integration + Dual-Path Architecture ✅
+#### Step 3.4 — Engine Integration + Actor-Based Architecture ✅
 The engine's step() method uses an **actor-based architecture**:
 
 **Trait path** (all worlds require `species_definitions`):
@@ -664,7 +663,7 @@ The legacy inline functions (_flow_animal, _flow_plant, etc.) were removed in fa
 
 ### Test Suite ✅
 - **163 tests passing** across `test_actors.py` (70) + `test_ecosim.py` (12) + `test_traits.py` (54) + `test_movement_actor.py` (36) + `test_voxel_grid.py` (28)
-- Smoke test shows state variables evolving correctly for both trait and legacy worlds
+- Smoke test shows state variables evolving correctly across all species
 - Bee colony transitions to FORAGING, events fire, entities move toward targets
 
 ### Milestone 3 Phase 1 Deliverables ✅
@@ -1036,7 +1035,7 @@ Expand the shipped search pipeline from 17-dim rate tuning to trait-space search
 - **Randomization is opt-in via JSON.** No `"randomize"` key = deterministic positions.
 - **Plants go dormant, not dead.** Root persistence is ecologically accurate and enables recovery narratives.
 - **Solo creative project.** Contributions welcome, creative direction maintained by author.
-- **(New) Trait-based species architecture.** Species defined as functional trait vectors in JSON. Engine derives behavior parameters from allometric scaling laws. Interaction templates handle combinatorics. Per-species engine code is a legacy path.
+- **(New) Trait-based species architecture.** Species defined as functional trait vectors in JSON. Engine derives behavior parameters from allometric scaling laws. Interaction templates handle combinatorics. All per-species engine code has been removed.
 - **(New) Two-pool nutrient system.** Fast pool (plant-available, quick turnover) + slow pool (mineralized reserve, long-term soil health). Mineralization, dissolution, and leaching fluxes run per tick. Decomposer entities accelerate mineralization locally.
 - **(New) ASAL substrate compatibility.** Engine exposes Init/Step/Render protocol for FM-guided search over trait space. search/ package has its own dependencies (torch, clip, cma); ecosim core stays clean.
 - **(New) Engine-first priority.** Godot client deferred until trait-based engine is stable. Browser visualizer sufficient for validating trait system, two-pool nutrients, and ASAL search.
@@ -1047,7 +1046,7 @@ Expand the shipped search pipeline from 17-dim rate tuning to trait-space search
 
 - **TRAIT_TRANSITION_PLAN.md** — Detailed implementation plan for the Phase 1–3 transition from hand-crafted rules to trait-based architecture with ASAL substrate integration. Includes TraitVector schema, allometric derivation functions, interaction template grammar, TraitCompiler design, engine refactor sequence, calibration strategy, and ASAL search loop implementations.
 
-- **TWO_POOL_NUTRIENT_SPEC.md** — Implementation spec for the two-pool nutrient system. Covers pool dynamics equations, rate constants, voxel manager changes (4→5 layers), every engine touchpoint that reads/writes nutrients, rain split ratios, dormancy recovery update, death→organic_matter deposits, timescale analysis for three recovery scenarios, test plan, and backward compatibility.
+- **TWO_POOL_NUTRIENT_SPEC.md** — Implementation spec for the two-pool nutrient system. Covers pool dynamics equations, rate constants, voxel manager changes (4→5 layers), every engine touchpoint that reads/writes nutrients, rain split ratios, dormancy recovery update, death→organic_matter deposits, timescale analysis for three recovery scenarios.
 
 - **LILA_ASSET_PIPELINE_CONTEXT.md** — AI-generated 3D asset pipeline research. Covers Flux.1 Schnell → BiRefNet → Hunyuan 3D v2.1 pipeline, deer mesh prototype results, rigging plan. Relevant to Milestone 4 (Godot client).
 

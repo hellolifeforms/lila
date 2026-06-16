@@ -144,9 +144,10 @@ uv run pytest tests/test_substrate.py -v
 - 2 water source params (count, radius)
 - 1 rain interval
 
-This finds "interesting tunings of the same five species." When the
-trait-based architecture lands, θ expands to encode body masses, diets,
-and thermal tolerances — the search becomes "interesting ecologies."
+This finds "interesting tunings of the same five species" (the original
+demo set, subset of the 8-species trait world). The trait-based
+architecture (shipped) enables the next step: θ encodes body masses,
+diets, and thermal tolerances — the search becomes "interesting ecologies."
 
 ## First run results
 

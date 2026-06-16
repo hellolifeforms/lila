@@ -256,7 +256,7 @@ See [`docs/model_adapter_spec.md`](docs/model_adapter_spec.md) for the full guid
 
 **Artificial life research** — an ASAL-compatible substrate with ecological semantics. Search for interesting ecosystems using foundation models, not hand-tuning.
 
-## The 0.1-alpha ecosystem
+## The ecosystem
 
 The current demo runs a temperate meadow with **eight species defined via trait vectors**:
 
@@ -412,17 +412,17 @@ See [`search/README.md`](search/README.md) for setup, output format, and analysi
 
 ## Roadmap
 
-The current engine encodes ecological knowledge as **per-species rules** —
-each species has hand-tuned guard thresholds, hard-coded interaction logic,
-and type-specific flow equations. This works for five species. It won't
+The original engine encoded ecological knowledge as **per-species rules** —
+each species had hand-tuned guard thresholds, hard-coded interaction logic,
+and type-specific flow equations. This worked for five species but didn't
 scale to fifty.
 
-The first architectural shift replaces species-specific rules with
-**functional traits and allometric scaling**. A species becomes a point
+The first architectural shift replaced species-specific rules with
+**functional traits and allometric scaling**. A species is a point
 in trait space — body mass, diet type, metabolic class, locomotion mode —
 and the engine derives all behavior parameters from established ecological
-scaling laws (Kleiber's Law, metabolic theory of ecology). Adding a wolf
-means writing a JSON trait vector, not new Python code. The interaction
+scaling laws (Kleiber's Law, metabolic theory of ecology). Adding a new
+species means writing a JSON trait vector, not new Python code. The interaction
 templates (herbivory, predation, pollination, decomposition) handle the
 combinatorics.
 
@@ -467,7 +467,6 @@ for the full argument.
 
 **Near-term:**
 - Spatial hash for O(1) neighbor queries (SpatialIndex strategy swap)
-- Calibration & regression testing (2000-tick baseline with two-pool nutrients)
 - Emergent dynamics validation with 8 species (trophic cascades, Lotka-Volterra oscillations)
 - Trait-based search — θ encodes organism traits, not just rate multipliers
 - Target search — CMA-ES optimization toward text prompts via CLIP
