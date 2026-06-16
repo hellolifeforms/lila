@@ -428,8 +428,8 @@ class TestReproductionActorInsect(unittest.TestCase):
         deltas = [e for e in effects if isinstance(e, StateVarDelta)]
         colony_deltas = [d for d in deltas if d.var_name == "colony_health"]
         self.assertEqual(len(colony_deltas), 1)
-        # Colony cost = parent_energy_cost * 0.3 = 0.2 * 0.3 = 0.06
-        self.assertAlmostEqual(colony_deltas[0].delta, -0.06, places=4)
+        # Colony cost = parent_energy_cost * 0.1 = 0.2 * 0.1 = 0.02
+        self.assertAlmostEqual(colony_deltas[0].delta, -0.02, places=4)
 
     def test_insect_child_inherits_colony_health(self):
         """INSECT child gets colony_health with floor."""
