@@ -64,9 +64,8 @@ def draw_moisture_heatmap(
 def draw_water(
     surface: pygame.Surface,
     water_sources: list[dict],
-    now_ms: float,
 ) -> None:
-    """Draw water sources with radial gradients and animated ripples."""
+    """Draw water sources with radial gradients."""
     fill = COLORS["waterFill"]
     edge = COLORS["waterEdge"]
     shine = COLORS["waterShine"]
@@ -101,18 +100,6 @@ def draw_water(
         pygame.draw.circle(overlay, (*edge, int(0.5 * 255)), oc, int(radius), width=1)
 
         surface.blit(overlay, (center[0] - size // 2, center[1] - size // 2))
-
-        # Animated ripples (thin lines on surface - no alpha needed)
-        if level > 0.3:
-            for i in range(2):
-                phase = (now_ms * 0.001 + i * 1.8) % 3.0
-                ripple_r = radius * 0.3 + phase * radius * 0.25
-                ox = math.sin(i * 4.7) * radius * 0.2
-                oz = math.cos(i * 4.7) * radius * 0.15
-                ripple_center = (center[0] + ox, center[1] + oz)
-                # Lighten the shine color for ripple
-                rc = tuple(min(c + 30, 255) for c in shine)
-                pygame.draw.circle(surface, rc, ripple_center, int(ripple_r), width=1)
 
 
 def draw_grid(surface: pygame.Surface) -> None:
@@ -408,7 +395,7 @@ def draw_all(surface: pygame.Surface, world, particles: list[dict] | None = None
 
     # Water sources
     if hasattr(world, "water_sources") and world.water_sources:
-        draw_water(surface, world.water_sources, now_ms)
+        draw_water(surface, world.water_sources)
 
     # Grid
     draw_grid(surface)
