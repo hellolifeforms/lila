@@ -143,7 +143,7 @@ function handleTickPacket(packet) {
   }
 
   // Reconcile client positions with server references
-  reconcile(world);
+  reconcile(world, currentTick);
 
   // Update UI
   document.getElementById('tick').textContent = currentTick;

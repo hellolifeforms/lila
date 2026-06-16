@@ -56,6 +56,15 @@ export class WorldEntity {
 
     // Acknowledgment tracking
     this.ackReceived = false;
+
+    // ── Per-entity sync personality (deterministic from ID) ──
+    // Spread out reconciliation so entities don't all nudge at once.
+    // _syncPhase: 0..3 — which frame within a sync cycle this entity reacts
+    // _syncSpeed: 0.4..1.0 multiplier on nudge intensity (slow / fast reactors)
+    const seed = hashId(id);
+    this._syncPhase = seed % 4;                  // 0, 1, 2, or 3
+    this._syncSpeed = 0.4 + (seed % 60) / 100;   // 0.40 .. 0.99
+    this._lastReconciledTick = -10;              // force reconcile on first ticks
   }
 
   /** Distance to another entity (2D xz-plane). */
@@ -267,6 +276,15 @@ export class WorldModel {
 }
 
 // ─── Helpers ──────────────────────────────────────────
+
+/** Deterministic hash from entity ID string → positive integer. */
+function hashId(id) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) {
+    h = ((h << 5) - h + id.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
 
 /** Infer entity type from ID prefix (fallback when server data is sparse). */
 function inferEntityTypeFromId(id) {

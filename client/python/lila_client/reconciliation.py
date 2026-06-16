@@ -9,6 +9,10 @@ reconcile target. The agency system then smoothly meanders toward
 that target over the next ~2 seconds. If a new target arrives before
 the old one is reached, the entity transitions smoothly (no snap).
 
+Each entity has a unique sync personality (_sync_phase, _sync_speed)
+so they don't all queue reconciliation targets at the same time —
+the sync looks organic, not mechanical.
+
 Additionally, a continuous gravity well pulls all entities gently
 toward their ref_position during normal agency, preventing sudden
 direction changes when new tick targets arrive.
@@ -17,11 +21,14 @@ direction changes when new tick targets arrive.
 from __future__ import annotations
 
 
-def reconcile(world) -> None:
+def reconcile(world, tick: int) -> None:
     """Enqueue reconciliation targets after receiving a new tick packet.
 
     Does NOT modify positions directly — the agency system at 60fps
     consumes the queue and moves entities smoothly.
+
+    Entities are staggered across ticks using _sync_phase (0..3) so
+    not all entities react to the sync pulse simultaneously.
 
     Called once per server tick, not every frame.
     """
@@ -31,11 +38,20 @@ def reconcile(world) -> None:
         if not ent.is_mobile_consumer or not ent.is_alive:
             continue
 
+        # ── Staggered reaction: each entity has a syncPhase (0..3)
+        # Only enqueue reconcile targets when the tick aligns with phase.
+        # This spreads the "nudge" across frames so it looks organic.
+        ticks_since_last = tick - ent._last_reconciled_tick
+        if ticks_since_last < ent._sync_phase:
+            continue  # not this entity's turn yet
+
         # Server acknowledged our deviation — trust it fully.
         # Clear any pending reconcile targets since server now matches us.
         if ent.ack_received:
             ent._reconcile_queue.clear()
             ent._reconcile_idx = 0
+            ent._last_reconciled_tick = tick
+            continue
 
         dx = ent.x - ent.ref_x
         dz = ent.z - ent.ref_z
@@ -46,6 +62,7 @@ def reconcile(world) -> None:
             # Prune completed targets.
             ent._reconcile_queue = ent._reconcile_queue[ent._reconcile_idx:]
             ent._reconcile_idx = 0
+            ent._last_reconciled_tick = tick
             continue
 
         # Prune completed targets before enqueueing new one.
@@ -61,6 +78,8 @@ def reconcile(world) -> None:
         # the latest target to avoid chasing ghosts.
         if len(ent._reconcile_queue) > 2:
             ent._reconcile_queue = [ent._reconcile_queue[-1]]
+
+        ent._last_reconciled_tick = tick
 
 
 def has_reconcile_target(ent) -> bool:

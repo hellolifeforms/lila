@@ -181,7 +181,7 @@ class LilaClient:
             self.world.apply_water_sources(packet["water_sources"])
 
         # Reconcile client positions with server references
-        reconcile(self.world)
+        reconcile(self.world, self.current_tick)
 
     def _send_heartbeat(self) -> None:
         """Send client heartbeat with entity positions and pending events."""

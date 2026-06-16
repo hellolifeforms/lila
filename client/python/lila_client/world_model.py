@@ -66,6 +66,12 @@ class WorldEntity:
     _reconcile_queue: list[tuple[float, float]] = field(default_factory=list)
     _reconcile_idx: int = 0  # index of current target in the queue
 
+    # ── Per-entity sync personality (deterministic from ID) ──
+    # Spread out reconciliation so entities don't all nudge at once.
+    _sync_phase: int = 0          # 0..3 — which frame within sync cycle to react
+    _sync_speed: float = 0.7      # 0.4..1.0 multiplier on nudge intensity
+    _last_reconciled_tick: int = -10  # force reconcile on first ticks
+
     @property
     def is_alive(self) -> bool:
         return self.state not in ("DEAD", "DYING", "DORMANT")
@@ -114,6 +120,7 @@ class WorldModel:
             ent.ref_z = ref_pos[2]
             ent.x = ref_pos[0]
             ent.z = ref_pos[2]
+            _init_sync_personality(ent)
             self.entities[eid] = ent
 
         # Update server reference position (gravity well)
@@ -159,6 +166,7 @@ class WorldModel:
             ent.drive.update(s["drive"])
         if "skeleton_id" in s:
             ent.skeleton_id = s["skeleton_id"]
+        _init_sync_personality(ent)
         self.entities[ent.id] = ent
         return ent
 
@@ -259,6 +267,27 @@ class WorldModel:
     def apply_water_sources(self, sources: list[dict]) -> None:
         """Update water source positions."""
         self.water_sources = sources or []
+
+
+def _init_sync_personality(ent: WorldEntity) -> None:
+    """Initialize per-entity sync personality (deterministic from ID).
+
+    Spreads out reconciliation so entities don't all nudge at once.
+    _sync_phase: 0..3 — which frame within a sync cycle this entity reacts
+    _sync_speed: 0.4..1.0 — multiplier on nudge intensity
+    """
+    seed = _hash_id(ent.id)
+    ent._sync_phase = seed % 4               # 0, 1, 2, or 3
+    ent._sync_speed = 0.4 + (seed % 60) / 100  # 0.40 .. 0.99
+    ent._last_reconciled_tick = -10
+
+
+def _hash_id(eid: str) -> int:
+    """Deterministic hash from entity ID string → positive integer."""
+    h = 0
+    for c in eid:
+        h = ((h << 5) - h + ord(c)) & 0xFFFFFFFF
+    return abs(h)
 
 
 def _infer_entity_type_from_id(eid: str) -> dict[str, str]:

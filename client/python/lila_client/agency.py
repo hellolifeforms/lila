@@ -23,6 +23,7 @@ from .world_model import WorldEntity
 # Gravity well: gentle pull toward ref_position, always active.
 # ~0.05 × speed per frame ≈ 3 units/s pull, enough to drift back
 # without overpowering the entity's desired behavior.
+# Each entity also has _sync_speed (0.4..1.0) that modulates this.
 GRAVITY_WELL_FACTOR = 0.05
 
 
@@ -61,10 +62,9 @@ def step_agency(world, dt: float) -> list[dict]:
 def _apply_gravity_well(ent: WorldEntity, world, dt: float) -> None:
     """Gently pull entity toward server ref_position.
 
-    Always active during normal agency. This ensures the entity
-    never drifts too far from the server's expectation, and when
-    a new tick changes the ref, the entity adjusts smoothly rather
-    than making a sudden direction change.
+    Always active during normal agency. Each entity has its own
+    _sync_speed (0.4..1.0) so the pull strength varies per entity,
+    making the sync look organic rather than uniform.
     """
     dx = ent.ref_x - ent.x
     dz = ent.ref_z - ent.z
@@ -73,8 +73,10 @@ def _apply_gravity_well(ent: WorldEntity, world, dt: float) -> None:
     if dist < 0.2:
         return  # Already close enough
 
-    # Gentle nudge toward ref — additive to normal movement
-    nudge = GRAVITY_WELL_FACTOR * dt
+    # Per-entity sync speed modulates the gravity well strength.
+    # Some entities are sluggish (0.4), others quick (0.99).
+    speed_factor = getattr(ent, "_sync_speed", 0.7)
+    nudge = GRAVITY_WELL_FACTOR * speed_factor * dt
     ent.x += dx * nudge
     ent.z += dz * nudge
     ent.x = clamp(ent.x, GRID_SIZE)
@@ -95,6 +97,8 @@ def _execute_reconcile_meander(
 
     The approach curve accelerates as the entity gets closer — it circles
     wide at first then tightens into the target, like a bird landing.
+
+    Each entity's _sync_speed modulates the approach rate.
     """
     dx = tx - ent.x
     dz = tz - ent.z
@@ -115,8 +119,11 @@ def _execute_reconcile_meander(
 
     speed = ent.speed or 2.0
 
+    # Per-entity sync speed modulates the radial approach rate.
+    speed_factor = getattr(ent, "_sync_speed", 0.7)
+
     # Radial step: move toward target
-    radial_step = min(speed * 1.5 * dt, dist)
+    radial_step = min(speed * 1.5 * speed_factor * dt, dist)
 
     # Perpendicular wobble: wide circles that tighten as we approach.
     # Wobble amplitude scales with distance — large arcs far away,
@@ -131,8 +138,8 @@ def _execute_reconcile_meander(
     ent.z = clamp(ent.z, GRID_SIZE)
 
     # Update velocity and facing
-    ent.velocity_x = nx * speed * 1.5 + px * wobble_amp
-    ent.velocity_z = nz * speed * 1.5 + pz * wobble_amp
+    ent.velocity_x = nx * speed * 1.5 * speed_factor + px * wobble_amp
+    ent.velocity_z = nz * speed * 1.5 * speed_factor + pz * wobble_amp
     ent.facing_angle = _lerp_angle(
         ent.facing_angle, math.atan2(dz, dx), 0.12
     )
