@@ -83,7 +83,7 @@ POLLINATOR_MAX_PER_FLOWER = 5     # max pollinators lingering at one flower
 POLLINATOR_VISIT_LIMIT = 4        # visits before forced WANDERING exploration
 POLLINATOR_WANDER_COOLDOWN = 30   # ticks to wander before re-entering FORAGING
 POLLINATOR_CROWD_RADIUS = 2.5     # radius to count "at flower" pollinators
-POLLINATOR_POST_VISIT_COOLDOWN = 15  # ticks after linger ends before re-pollination
+POLLINATOR_POST_VISIT_COOLDOWN = 8  # ticks after linger ends before re-pollination
 
 # ── Child entity inheritance ──────────────────────────────────────────────────
 CHILD_HUNGER_INHERIT = 0.3      # child hunger = parent × this

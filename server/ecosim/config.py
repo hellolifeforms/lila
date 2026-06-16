@@ -62,7 +62,7 @@ _DEFAULT_CONFIG: dict[str, Any] = {
         "arrival_threshold_double": 2.0,
     },
     "reproduction": {
-        "colony_health_repro_cost_factor": 0.3,
+        "colony_health_repro_cost_factor": 0.1,
     },
     "interactions": {
         "mass_ratio_windows": {
