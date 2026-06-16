@@ -11,13 +11,13 @@
 
 **Tagged release: v0.0.1-alpha** — published, repo public on GitHub.
 
-līlā is a BYOM (Bring Your Own Model) ecosystem simulation engine. Users define a world in JSON — species, biome, soil, water — and the engine grows an autonomous ecosystem from simple rules. The server runs the hybrid automaton (ecology, physics, ML inference); clients render the result via WebSocket at 10 Hz.
+līlā is a BYOM (Bring Your Own Model) ecosystem simulation engine. Users define a world in JSON — species, biome, soil, water — and the engine grows an autonomous ecosystem from simple rules. The server runs the hybrid automaton at ~0.5 Hz, emitting intent packets (state, drives, motion latents, reference positions). Clients execute local agency at 60 Hz and send heartbeats upstream. Divergence is treated as emergence, not error.
 
 The project thesis — explored in ["The Unseen Hand"](https://www.hellolifeforms.com/p/the-unseen-hand) — is that the most impactful AI is small, specialized, and invisible. Tiny ML models guide lifelike motion and behavior; the user never sees inference happening, they just see a world that feels alive.
 
 The name comes from the Sanskrit concept of [līlā](https://www.embodiedphilosophy.com/what-is-lila/) — the spontaneous, purposeless creative unfolding of reality. There's no win condition. The world plays as itself.
 
-**Current direction:** The engine is transitioning from hand-crafted per-species rules to a **trait-based architecture** using allometric scaling laws (Metabolic Theory of Ecology). Species become points in trait space; the engine derives all behavior parameters from body mass and functional traits. This also makes līlā a compelling **substrate for automated ALife search** (ASAL framework) — an ecologically-grounded simulation where FM-guided search discovers interesting ecosystem configurations.
+**Current direction:** The trait-based architecture is shipped. The intent-based client agency layer is shipped (PR #83). The telemetry bus is shipped for ML training data generation. Next: calibration & regression testing with all 8 species, spatial hash for O(1) neighbor queries, and trait-based ASAL search.
 
 **Copyright:** BioSynthArt Studios LLC. **License:** Apache 2.0.
 **Source control:** GitHub at `github.com/hellolifeforms/lila` (org: hellolifeforms).
@@ -29,49 +29,56 @@ The name comes from the Sanskrit concept of [līlā](https://www.embodiedphiloso
 ## Architecture Overview
 
 ```
-┌─────────────────────────┐
-│    Browser Visualizer   │  ← v0.0.1-alpha (shipped, single HTML file)
-│    Godot 4.x Client     │  ← deferred to Milestone 4
-│    Headless Renderer    │  ← Shipped (PIL, 256×256, for ASAL search)
-└──────────┬──────────────┘
-           │ WebSocket (delta-encoded tick packets)
-┌──────────▼──────────────┐
-│    Worker               │  ← Shipped. HTTP + WS on single port
-│    (one per session)    │     Serves viz HTML, streams ticks
-└──────────┬──────────────┘
-           │
-┌──────────▼─────────────────────────────────────────────────────────┐
-│    ecosim (Python package, stdlib only)                            │
-│  ┌─────────────────┐  ┌───────────────────────────────────────┐    │
-│  │ Hybrid Automaton│  │ Trait System (Milestone 2)            │    │
-│  │ Flow + Guards   │  │ TraitVector + Compiler                │    │
-│  ├─────────────────┤  │ Allometric Derivations                │    │
-│  │ Voxel Manager   │  │ Interaction Templates                 │    │
-│  │ 5 layers (M2)   │  ├───────────────────────────────────────┤    │
-│  │ Water System    │  │ Actor Effects Architecture            │    │
-│  │ Dynamic levels  │  │ EffectBus + Flow/Guard/IX Actors      │    │
-│  ├─────────────────┤  │ Dual-path: trait-based / legacy       │    │
-│  │ Two-Pool Soil   │  ├───────────────────────────────────────┤    │
-│  │ Fast/Slow (M2)  │  │ BYOM Adapters                         │    │
-│  └─────────────────┘  │ mlp/static/random                     │    │
-│                       ├───────────────────────────────────────┤    │
-│                       │ World Randomizer                      │    │
-│                       │ D4 transforms                         │    │
-│                       └───────────────────────────────────────┘    │
-└────────────────────────────────────────────────────────────────────┘
-           │
-┌──────────▼────────────────────────────────────────────┐
-│    search/ (Shipped — Track A, rate-tuning search)    │
-│    ASAL Substrate Protocol (Init/Step/Render)         │
-│    Headless PIL Renderer (256×256)                    │
-│    CLIP ViT-B/32 Evaluator                            │
-│    Illumination Search (diversity GA)                 │
-│    Simulation Atlas (UMAP + grid sampling)            │
-│    ─────────────────────────────────────────────────  │
-│    Target Search (CMA-ES + text prompts)      pending │
-│    Open-Ended Search (temporal novelty)       pending │
-│    Trait-Based θ Expansion (Milestone 2 dep)  pending │
-└───────────────────────────────────────────────────────┘
+┌─────────────────────────────┐  ┌─────────────────────────────┐
+│  Browser Visualizer         │  │  Python Debug Client        │
+│  Modular JS (shipped)       │  │  ImGui + telemetry (shipped)│
+│  60 Hz agency + reconciliation│ │  Replay from JSONL logs    │
+│  Heartbeats @ 1 Hz          │  │                             │
+└─────────┬───────────────────┘  └──────────┬──────────────────┘
+          │ WebSocket                       │ WebSocket
+          │ intent packets (0.5 Hz)         │ /ws + /telemetry
+          │ heartbeats (1 Hz)               │
+          │                                 │
+┌─────────▼─────────────────────────────────▼──────────────────┐
+│    Worker                                                    │
+│    HTTP + WS on single port (one per session)                │
+│    Serves viz, streams intents, absorbs heartbeats           │
+└─────────┬────────────────────────────────────────────────────┘
+          │
+┌─────────▼────────────────────────────────────────────────────┐
+│    ecosim (Python package, stdlib only)                      │
+│  ┌─────────────────┐  ┌───────────────────────────────────┐  │
+│  │ Hybrid Automaton│  │ Trait System (Milestone 2)        │  │
+│  │ Intent emit +   │  │ TraitVector + Compiler            │  │
+│  │ HB absorption   │  │ Allometric Derivations            │  │
+│  ├─────────────────┤  │ Interaction Templates             │  │
+│  │ Voxel Manager   │  ├───────────────────────────────────┤  │
+│  │ 5 layers (M2)   │  │ Actor Effects Architecture        │  │
+│  │ Water System    │  │ EffectBus + Flow/Guard/IX Actors  │  │
+│  │ Dynamic levels  │  ├───────────────────────────────────┤  │
+│  │ Two-Pool Soil   │  │ BYOM Adapters                     │  │
+│  │ Fast/Slow (M2)  │  │ mlp/static/random                 │  │
+│  └─────────────────┘  ├───────────────────────────────────┤  │
+│                       │ Telemetry Bus (shipped)           │  │
+│                       │ JSONL: config + timeseries + evt  │  │
+│                       ├───────────────────────────────────┤  │
+│                       │ World Randomizer                  │  │
+│                       │ D4 transforms                     │  │
+│                       └───────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
+          │
+┌─────────▼───────────────────────────────────────────┐
+│    search/ (Shipped — Track A, rate-tuning search)  │
+│    ASAL Substrate Protocol (Init/Step/Render)       │
+│    Headless PIL Renderer (256×256)                  │
+│    CLIP ViT-B/32 Evaluator                          │
+│    Illumination Search (diversity GA)               │
+│    Simulation Atlas (UMAP + grid sampling)          │
+│    ───────────────────────────────────────────────  │
+│    Target Search (CMA-ES + text prompts)    pending │
+│    Open-Ended Search (temporal novelty)     pending │
+│    Trait-Based θ Expansion (M2 dep)         pending │
+└─────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -86,7 +93,7 @@ lila/
 │   ├── uv.lock                     # deterministic dependency lockfile
 │   ├── ecosim/                     # core simulation library
 │   │   ├── __init__.py
-│   │   ├── engine.py               # hybrid automaton (trait-based, actor-driven, ~737 lines)
+│   │   ├── engine.py               # hybrid automaton + intent emit/absorption (~782 lines after decomposition)
 │   │   ├── entities.py             # entity schemas, init_entity()
 │   │   ├── biome.py                # biome presets → BiomeConfig
 │   │   ├── config.py               # [M2] SIM_CONFIG loader — tunable params from JSON
@@ -94,7 +101,8 @@ lila/
 │   │   ├── world_processes.py      # World-process handlers (evaporation, water replenish, soil drain/deposit, nutrient pool dynamics)
 │   │   ├── environment_manager.py  # [M2] Environment state — biome, climate, voxels, water sources, rain
 │   │   ├── model_adapter.py        # MotorAdapter protocol, ContextSpec
-│   │   ├── worker.py               # async WS tick loop + HTTP viz server
+│   │   ├── worker.py               # WS server: intent emit (0.5 Hz), heartbeat absorption, telemetry WS
+│   │   ├── telemetry.py            # Telemetry bus — JSONL event stream (config, timeseries, events)
 │   │   ├── traits.py               # [M2] TraitVector, allometric derivations
 │   │   ├── interactions.py         # [M2] InteractionTemplate grammar
 │   │   ├── trait_compiler.py       # [M2] TraitCompiler: traits → engine params
@@ -128,13 +136,35 @@ lila/
 │   │   ├── test_movement_actor.py  # [M3] movement actor behavior tests (36)
 │   │   ├── test_voxel_grid.py      # VoxelGrid protocol + query_overlap/walk_layer (28 tests)
 │   │   ├── test_nutrients.py       # [M2] two-pool nutrient flow tests (~20)
-│   │   └── test_reproduction_actor.py  # reproduction actor behavior tests (~15)
+│   │   ├── test_reproduction_actor.py  # reproduction actor behavior tests (~15)
+│   │   └── client_harness.py       # Headless client test harness (intent protocol + reconciliation)
 │   └── weights/
 │       └── (motion_v0.json)        # placeholder for trained weights
 │
 ├── client/
-│   ├── browser/
-│   │   └── index.html              # canvas-based 2D ecosystem visualizer
+│   ├── browser/                    # Modular JS visualizer (client-side agency + reconciliation)
+│   │   ├── index.html              # Thin shell (46 lines)
+│   │   ├── css/style.css           # All visual styles
+│   │   ├── js/agency.js            # Client-side behavior engine (60 Hz)
+│   │   ├── js/heartbeat.js         # Upstream position/event reporting (1 Hz)
+│   │   ├── js/reconciliation.js    # Gravity-well position reconciliation
+│   │   ├── js/world-model.js       # Local entity registry + spatial queries
+│   │   ├── js/renderer.js          # Canvas rendering (entities, water, heatmap, particles)
+│   │   ├── js/particles.js         # Particle system for event visualizations
+│   │   ├── js/constants.js         # Colors, grid config, tick rates
+│   │   └── js/main.js              # Entry point — WS setup, render loop, UI controls
+│   ├── python/                     # ImGui debug client (telemetry + replay)
+│   │   ├── pyproject.toml
+│   │   └── lila_client/
+│   │       ├── main.py             # Entry point
+│   │       ├── agency.py           # Client-side behavior engine (mirrors browser)
+│   │       ├── websocket.py        # Async WS client (simulation + telemetry streams)
+│   │       ├── world_model.py      # Local scene graph
+│   │       ├── imgui_view.py       # ImGui render: world view, telemetry timeline, inspector
+│   │       ├── reconciliation.py   # Position reconciliation
+│   │       ├── replay.py           # Post-mortem replay from JSONL with tick scrubber
+│   │       ├── constants.py        # Shared constants
+│   │       └── pygame_renderer.py  # Fallback renderer
 │   └── godot/                      # [M4] Godot 4.x client
 │
 ├── search/                         # ASAL substrate + search (shipped Track A)
@@ -170,6 +200,8 @@ lila/
 ├── docs/
 │   ├── model_adapter_spec.md       # BYOM guide — how to build adapters
 │   ├── data_contract.md            # v0.2 protocol spec
+│   ├── intent_based_architecture.md # Intent protocol, reconciliation, client agency spec
+│   ├── ECOSIM_PARAMETER_TELEMETRY_SPACE.md # Telemetry streams, parameter space, hybrid BYOM plan
 │   ├── architecture.md
 │   ├── species_spec.md             # 0.1-alpha species + skeleton rigs
 │   ├── lessons_learned.md          # debugging war stories
@@ -183,7 +215,8 @@ lila/
 ├── LICENSE                         # Apache 2.0
 ├── README.md                       # project overview, quick start, roadmap
 ├── TRAIT_TRANSITION_PLAN.md        # detailed Phase 1-3 implementation plan
-└── TWO_POOL_NUTRIENT_SPEC.md       # two-pool soil nutrient spec
+├── TWO_POOL_NUTRIENT_SPEC.md       # two-pool soil nutrient spec
+└── LILA_PROJECT_STATE.md           # This file — project state, milestones, architecture
 ```
 
 Items marked `[M2]`, `[M3]`, `[M4]` indicate which milestone introduces them.
@@ -396,6 +429,54 @@ Five species, two skeletons, five interaction chains:
 **Motivation:** The current engine encodes ecological knowledge as per-species rules. Every new species requires hand-tuned guard thresholds, interaction logic, and flow equations — O(n²) design effort. The trait-based approach encodes knowledge as allometric scaling laws and interaction templates, making new species a JSON definition rather than new code. This is informed by the Madingley General Ecosystem Model (Harfoot et al. 2014) and the Metabolic Theory of Ecology (Brown et al. 2004).
 
 **Reference documents:** `TRAIT_TRANSITION_PLAN.md` (Phase 1), `TWO_POOL_NUTRIENT_SPEC.md`
+
+### Step 4.1 — Intent-Based Client Agency Architecture ✅
+
+The engine was refactored from an authoritative-server model (streaming exact positions at 10 Hz) to an **intent-based architecture** where the server guides via desire and disposition, and the client executes local agency between ticks. Divergence is treated as emergence, not error.
+
+**Server-side changes (`engine.py`, `worker.py`):**
+- `_build_tick_packet()` — emits intent fields (`state`, `drive`, `motion_latent`, `ref_position`, `_can_*` eligibility flags) instead of authoritative positions
+- `absorb_client_positions(positions)` — reconciles client-reported positions using soft-nudge within bounds, snap + `_ack` on large divergence
+- `absorb_client_events(events)` — absorbs client-reported interactions (consumption, predation, pollination, repro) with validation and rate caps
+- `get_species_definitions()` — exports lightweight species reference (`type`, `movement_speed`, `diet_order`, `flee_targets`, `is_pollinator`, `pollination_targets`) for client-side agency
+- `DEFAULT_TICK_RATE` changed from 0.1s (10 Hz) → 2.0s (0.5 Hz)
+- `session_started` ack includes `species` definitions
+- `"heartbeat"` added to `CONTROL_HANDLERS`
+- `process_request()` extended to serve arbitrary static files from viz directory (css/, js/) with proper MIME types
+
+**Browser client modularization:** Monolithic `index.html` (~1200 lines) split into modular files:
+- `js/agency.js` (370 lines) — client-side behavior engine: drive evaluation → target selection → movement → interaction triggers with cooldowns
+- `js/heartbeat.js` (65 lines) — upstream position/event reporting at 1 Hz
+- `js/reconciliation.js` (50 lines) — gravity-well position reconciliation (trust within bounds, nudge/snap, `_ack` handling)
+- `js/world-model.js` (280 lines) — local entity registry, species defs, spatial queries (`findNearest`, `findNearestWater`, `findNearestMate`)
+- `js/renderer.js` (510 lines) — all canvas drawing functions
+- `js/main.js` (340 lines) — entry point: WS setup, render loop, UI controls
+- `js/constants.js` (61 lines), `js/particles.js` (38 lines), `css/style.css` (176 lines)
+
+**Python debug client (`client/python/`):**
+- ImGui-based real-time visualization with telemetry timeline, entity inspector
+- WebSocket client bridging asyncio ↔ ImGui via queues
+- Dual-stream connection: `/ws` (simulation) + `/telemetry` (event stream)
+- Post-mortem replay from JSONL logs with tick scrubber
+- Client-side agency engine mirroring browser (flee → drink → mate → forage → hunt → pollinate → wander)
+
+**Telemetry bus (`ecosim/telemetry.py`):**
+- Three streams: config snapshot (once), time-series aggregates (every K ticks), event log (batched)
+- Writes to `~/.lila/logs/<session_id>.jsonl`
+- Streams over `/telemetry` WebSocket endpoint
+- Tracks: intent emit, event log, absorption trace
+
+**Test harness (`tests/client_harness.py`):**
+- Headless Python client simulating full browser session
+- Validates intent packet format, heartbeat reconciliation, event absorption, divergence snap + `_ack`
+
+**Reference doc:** [`docs/intent_based_architecture.md`](docs/intent_based_architecture.md) (full protocol spec, reconciliation strategy, action mapping, migration notes)
+
+#### Step 4.2 — Telemetry Infrastructure ✅
+- Config snapshots, time-series aggregates, event batching
+- Parameter space summary: ~299 constants → ~48 actionable dimensions
+- JSONL logging pipeline for ML training data generation
+- `docs/ECOSIM_PARAMETER_TELEMETRY_SPACE.md` — architecture reference
 
 ### Completed Steps ✅
 
@@ -743,13 +824,13 @@ Each phase has a **physics default** and an optional **model override**. The eng
 
 ### Phase Plan + Issues
 
-| # | Issue | Role |
-|---|-------|------|
-| [#77](https://github.com/hellolifeforms/lila/issues/77) | Telemetry emitter: config snapshot + time-series aggregates + event batching | Foundation — three-stream data collection |
-| [#78](https://github.com/hellolifeforms/lila/issues/78) | Surrogate model + sensitivity analysis over sim_config parameter space | Understanding — which of ~48 tunable params actually matter |
-| [#79](https://github.com/hellolifeforms/lila/issues/79) | Learned diffusion: replace or gate voxel nutrient diffusion with a model | First replacement — O(N×4) → O(1) forward pass |
-| [#20](https://github.com/hellolifeforms/lila/issues/20) | Behavior-level adapter | Guard augmentation — learned threshold bias per entity |
-| [#21](https://github.com/hellolifeforms/lila/issues/21) | Narrative-level adapter | Macro intelligence — ecosystem-scale event injection |
+| # | Issue | Role | Status |
+|---|-------|------|--------|
+| [#77](https://github.com/hellolifeforms/lila/issues/77) | Telemetry emitter: config snapshot + time-series aggregates + event batching | Foundation — three-stream data collection | **shipped** |
+| [#78](https://github.com/hellolifeforms/lila/issues/78) | Surrogate model + sensitivity analysis over sim_config parameter space | Understanding — which of ~48 tunable params actually matter | pending |
+| [#79](https://github.com/hellolifeforms/lila/issues/79) | Learned diffusion: replace or gate voxel nutrient diffusion with a model | First replacement — O(N×4) → O(1) forward pass | pending |
+| [#20](https://github.com/hellolifeforms/lila/issues/20) | Behavior-level adapter | Guard augmentation — learned threshold bias per entity | pending |
+| [#21](https://github.com/hellolifeforms/lila/issues/21) | Narrative-level adapter | Macro intelligence — ecosystem-scale event injection | pending |
 
 ### Telemetry Streams (from #77)
 
@@ -967,6 +1048,8 @@ Expand the shipped search pipeline from 17-dim rate tuning to trait-space search
 - **LILA_ASSET_PIPELINE_CONTEXT.md** — AI-generated 3D asset pipeline research. Covers Flux.1 Schnell → BiRefNet → Hunyuan 3D v2.1 pipeline, deer mesh prototype results, rigging plan. Relevant to Milestone 4 (Godot client).
 
 - **docs/ECOSIM_PARAMETER_TELEMETRY_SPACE.md** — Hybrid model + simulation architecture. Covers telemetry streams (config snapshot, time-series aggregates, event batching), parameter space stratification (~299 constants → ~48 actionable), concrete use cases (surrogate model, learned diffusion, sensitivity analysis, early-warning predictor), and five-phase implementation plan with issue tracking.
+
+- **docs/intent_based_architecture.md** — Intent-based client agency architecture. Covers intent protocol (state, drives, motion_latent, ref_position, eligibility flags), reconciliation strategy (soft-nudge, snap + _ack), heartbeat format, client-side behavior engine, action mapping (who decides what), browser client modularization, test harness, and migration notes.
 
 ---
 

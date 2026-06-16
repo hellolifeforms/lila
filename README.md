@@ -18,7 +18,7 @@
 
 `līlā` is an open-source engine that grows autonomous ecosystems from simple rules. You define species, biomes, and resources — the engine handles hunger cycles, predator-prey loops, soil nutrient flows, water depletion, dormancy, and recovery. Organisms don't follow scripts; their behavior emerges from continuous state variables, hybrid automata guards, and environmental feedback.
 
-> **What you see right now is a 2D debug visualizer** — a window into the engine's state, not the final form. The engine is the product: a headless simulation server that streams tick packets over WebSocket to any client. A 3D Godot client with skeletal animation is planned for v0.1.0. The thesis isn't pretty graphics — it's that tiny ML models, invisible to the user, make a world feel alive. See ["The Unseen Hand"](https://www.hellolifeforms.com/p/the-unseen-hand) for the full argument.
+> **What you see is an intent-based client** — the server emits state, drives, and reference positions; the client decides movement, triggers interactions, and sends heartbeats back upstream. Divergence is treated as emergence, not error. Two clients ship today: a browser visualizer (modular JS, 60 Hz local agency) and a Python debug client (ImGui, telemetry timeline, replay). A 3D Godot client with skeletal animation is planned for v0.1.0. The thesis isn't pretty graphics — it's that tiny ML models, invisible to the user, make a world feel alive. See ["The Unseen Hand"](https://www.hellolifeforms.com/p/the-unseen-hand) for the full argument.
 
 ### Built for
 
@@ -35,7 +35,7 @@ cd lila/deploy/compose
 docker compose up --build
 ```
 
-Open **http://localhost:8001** — a temperate meadow is already running at 10 Hz. Click **☔ Rain** to trigger recovery cycles, or **⏺ Record** to capture dynamics as WebM (convert to GIF with `ffmpeg -i lila-recording.webm -vf "fps=15,scale=480:-1" -loop 0 docs/assets/demo.gif`). Stop with `docker compose down`.
+Open **http://localhost:8001** — a temperate meadow is running. The server computes ecology at 0.5 Hz and streams intent packets to the client; the browser renders at 60 Hz with local agency. Click **☔ Rain** to trigger recovery cycles, or **⏺ Record** to capture dynamics as WebM (convert to GIF with `ffmpeg -i lila-recording.webm -vf "fps=15,scale=480:-1" -loop 0 docs/assets/demo.gif`). Stop with `docker compose down`.
 
 ### Why līlā?
 
@@ -51,6 +51,7 @@ Open **http://localhost:8001** — a temperate meadow is already running at 10 H
 - **Define a world** — [Define a world in JSON](#define-a-world-in-json) just below
 - **Bring Your Own Model** — [`docs/model_adapter_spec.md`](docs/model_adapter_spec.md) for the adapter protocol, context specs, and export pipeline
 - **Trait architecture** — [`LILA_PROJECT_STATE.md`](LILA_PROJECT_STATE.md#milestone-2-trait-based-architecture--partial--two-pool-nutrients-pending) for allometric scaling and interaction templates
+- **Intent-based agency** — [`docs/intent_based_architecture.md`](docs/intent_based_architecture.md) for the intent protocol, reconciliation, and client-side behavior engine
 - **ASAL search** — [`search/README.md`](search/README.md) for illumination search, CLIP evaluation, and atlas generation
 - **Develop & contribute** — [`DEVELOPING.md`](DEVELOPING.md) for the `uv` workflow, tests, and architecture deep dives
 
@@ -147,20 +148,24 @@ See [`server/examples/`](server/examples/) for the full demo and additional pres
 ## How it works
 
 ```
-    Browser / Godot client
-           │
-           │ WebSocket (tick packets at 10 Hz)
-           │
-    ┌──────▼───────┐
-    │   Worker     │  One per active ecosystem
-    │   HTTP + WS  │  Serves viz + streams ticks
-    └──────┬───────┘
+    Browser client (60 Hz agency)  │  Python debug client (ImGui + telemetry)
+           │                                │
+           │ WebSocket                      │ WebSocket
+           │ intent packets (0.5 Hz)        │ /ws + /telemetry
+           │ heartbeats (1 Hz)              │
+           │                                │
+    ┌──────▼────────────────────────────────▼────────┐
+    │   Worker                                       │
+    │   HTTP + WS on single port (one per session)   │
+    │   Serves viz, streams intents, absorbs HB      │
+    └──────┬─────────────────────────────────────────┘
            │
     ┌──────▼───────────────────────────────────┐
     │   ecosim (Python, stdlib only)           │
     │                                          │
     │   engine ─── hybrid automaton            │
-    │              flow equations + guards     │
+    │              intent emit + absorption    │
+    │              flow/guard/interaction      │
     │              hysteresis on transitions   │
     │                                          │
     │   traits ── species as trait vectors     │
@@ -175,10 +180,14 @@ See [`server/examples/`](server/examples/) for the full demo and additional pres
     │              nutrients_fast, slow ✅     │
     │              moisture, temperature,      │
     │              organic matter              │
+    │                                          │
+    │   telemetry ── JSONL event stream        │
+    │             config snapshot + timeseries │
+    │             for training / post-mortem   │
     └──────────────────────────────────────────┘
 ```
 
-Each tick, the engine runs seven phases: continuous flow updates, entity interactions, guard condition checks (with hysteresis to prevent oscillation), voxel layer effects, motor model inference, removals, and spawns. The result is a delta-encoded tick packet streamed to the client over WebSocket.
+Each tick, the engine runs seven phases: flow actors, interactions, guard actors, voxel effects, world processes, motor inference, and lifecycle (removals/spawns). The result is an **intent packet** — state, drives, motion latents, reference positions, and eligibility flags — streamed to clients at ~0.5 Hz. Clients execute local agency at 60 Hz and send **heartbeats** (positions + interaction events) upstream. The server absorbs heartbeats through a reconciliation strategy: soft-nudge within bounds, snap + `_ack` on large divergence.
 
 The engine has **zero external dependencies** — stdlib Python only. All numeric constants live in a single `constants.py` module. The actor system (flow, guard, interaction) uses immutable effects applied atomically via EffectBus. The worker adds `websockets`. That's the entire server.
 
@@ -231,6 +240,8 @@ Three model levels are defined:
 | Behavior  | every tick    | Influences state transition decisions     | designed, not yet wired |
 | Narrative | every N ticks | Shapes macro-scale ecosystem dynamics     | designed, not yet wired |
 
+**Intent-based client agency** (shipped) bridges motor inference with client-side behavior: the server streams `state`, `drive` variables, `motion_latent`, `ref_position`, and `_can_*` eligibility flags at ~0.5 Hz. The client evaluates a priority chain (flee → drink → mate → forage → hunt → pollinate → wander) and executes movement locally at 60 Hz. Heartbeats report positions and interactions upstream for server validation. See [`docs/intent_based_architecture.md`](docs/intent_based_architecture.md).
+
 See [`docs/model_adapter_spec.md`](docs/model_adapter_spec.md) for the full guide to building your own adapter.
 
 ## Use cases
@@ -276,31 +287,34 @@ Three interaction chains emerge without scripting:
 lila/
 ├── server/
 │   ├── ecosim/              # Core simulation (stdlib only)
-│   │   ├── engine.py        # Hybrid automaton
+│   │   ├── engine.py        # Hybrid automaton + intent emit/absorption
 │   │   ├── entities.py      # Entity schemas
 │   │   ├── traits.py        # Trait definitions
 │   │   ├── trait_compiler.py# Trait → derived params compiler
 │   │   ├── interactions.py  # Interaction templates
 │   │   ├── biome.py         # Biome presets
+│   │   ├── config.py        # SIM_CONFIG loader (tunable params from JSON)
 │   │   ├── voxel_manager.py # VoxelGrid protocol + UniformVoxelGrid (multi-resolution ready)
 │   │   ├── world_processes.py  # World-process handlers (evaporation, water replenish, soil drain/deposit)
 │   │   ├── constants.py     # Universal simulation constants (single source of truth)
 │   │   ├── model_adapter.py # BYOM protocol
 │   │   ├── effects.py       # Effect dataclasses + EffectBus (immutable effect pipeline)
+│   │   ├── telemetry.py     # Telemetry bus — JSONL event stream
 │   │   ├── actors/          # Actor system (flow, guard, interaction, movement)
 │   │   │   ├── __init__.py  # InteractionContext, FlowActor/GuardActor bases, registries
-│   │   │   ├── flow_actors.py    # ConsumerFlowActor, ProducerFlowActor, DecomposerFlowActor (+ MovementActor integration)
+│   │   │   ├── flow_actors.py    # ConsumerFlowActor, ProducerFlowActor, DecomposerFlowActor
 │   │   │   ├── guard_actors.py   # ConsumerGuardActor, ProducerGuardActor, DecomposerGuardActor
 │   │   │   ├── interaction_actors.py  # FleeActor, PredationActor, HerbivoryActor, PollinationActor
 │   │   │   └── movement_actors.py  # MovementActor — target selection as effect-emitting actor
 │   │   ├── layout.py        # LayoutManager — world loading, D4 transforms, randomization
 │   │   ├── spatial_index.py # SpatialIndex protocol + BruteForceSpatialIndex (neighbor queries)
 │   │   ├── movement_system.py  # MovementSystem — gate policy + kinematics for mobile entities
-│   │   ├── worker.py        # WebSocket server
+│   │   ├── worker.py        # WebSocket server (intent emit, heartbeat absorption)
 │   │   └── adapters/        # Built-in motor models
 │   ├── examples/            # Demo world definitions
 │   └── tests/
 │       ├── test_voxel_grid.py    # VoxelGrid protocol + query_overlap/walk_layer (28 tests)
+│       └── client_harness.py     # Headless client test harness (intent protocol + reconciliation)
 ├── search/
 │   ├── lila_search/         # ASAL-compatible search (see below)
 │   │   ├── substrate.py     # Init/Step/Render protocol
@@ -312,12 +326,22 @@ lila/
 │   ├── scripts/             # CLI entry points
 │   └── tests/
 ├── client/
-│   ├── browser/             # Canvas-based 2D visualizer
+│   ├── browser/             # Modular JS visualizer (client-side agency + reconciliation)
+│   │   ├── index.html       # Thin shell
+│   │   ├── js/agency.js     # Client-side behavior engine (60 Hz)
+│   │   ├── js/heartbeat.js  # Upstream position/event reporting (1 Hz)
+│   │   ├── js/reconciliation.js  # Gravity-well position reconciliation
+│   │   ├── js/world-model.js  # Local entity registry + spatial queries
+│   │   ├── js/renderer.js   # Canvas rendering
+│   │   └── js/main.js       # Entry point — WS setup, render loop, UI
+│   ├── python/              # ImGui debug client (telemetry + replay)
+│   │   └── lila_client/     # agency, imgui_view, websocket, world_model, replay
 │   └── godot/               # 3D client (in development)
 ├── training/                # Example ML training pipeline
 ├── deploy/
 │   └── compose/             # Docker Compose (start here)
 └── docs/
+    └── intent_based_architecture.md  # Intent protocol + reconciliation spec
 ```
 
 ### Actor-based architecture
@@ -402,18 +426,19 @@ means writing a JSON trait vector, not new Python code. The interaction
 templates (herbivory, predation, pollination, decomposition) handle the
 combinatorics.
 
-The second architectural shift is **intent-based motion**. Today the
-engine streams discrete state and positions to the client, which renders
-them flat. The target architecture has the server emit small latent
-vectors — *intent* — and the client integrate a learned body law from
-them. The body is modeled as a bank of coupled Hopf oscillators; style
-becomes the parameter set of that law, and gaits become limit cycles
-of it. Wire cost drops by orders of magnitude because the client holds
-the decoder. In multi-observer worlds, this generalizes into a split
-between a **consensus base** (causal facts that must agree across all
-clients) and a **cosmetic fiber** (the local performance of those facts),
-with reconciliation issued as intent rather than as coordinate snaps.
-See ["The Mathematics of Līlā"](https://www.hellolifeforms.com/p/the-mathematics-of-lila)
+The second architectural shift is **intent-based motion**. The server
+emits state, drives, motion latents, and reference positions at ~0.5 Hz.
+Clients execute local agency at 60 Hz and send heartbeats upstream.
+Divergence is treated as emergence, not error — the server soft-nudges
+within bounds and snaps + acknowledges on large divergence. This first
+layer is shipped. The deeper layer models the body as a bank of coupled
+Hopf oscillators; style becomes the parameter set of that law, and gaits
+become limit cycles of it. Wire cost drops by orders of magnitude because
+the client holds the decoder. In multi-observer worlds, this generalizes
+into a split between a **consensus base** (causal facts that must agree
+across all clients) and a **cosmetic fiber** (the local performance of
+those facts), with reconciliation issued as intent rather than as
+coordinate snaps. See ["The Mathematics of Līlā"](https://www.hellolifeforms.com/p/the-mathematics-of-lila)
 for the full argument.
 
 **Shipped:**
@@ -434,22 +459,28 @@ for the full argument.
 - Headless renderer for FM-guided evaluation (PIL, 256×256)
 - Illumination search — diversity-driven GA with CLIP ViT-B/32
 - Simulation atlas — UMAP projection of discovered ecosystems
+- Intent-based client agency — server emits state/drives/latents/ref_position at 0.5 Hz; client executes 60 Hz local behavior + 1 Hz heartbeats
+- Browser client modularization — split from monolithic HTML into modular JS (agency, heartbeat, reconciliation, world-model, renderer)
+- Python debug client — ImGui-based with telemetry timeline, entity inspector, post-mortem replay from JSONL logs
+- Telemetry bus — config snapshots, time-series aggregates, event batching (JSONL to `~/.lila/logs/`)
+- Client reconciliation — soft-nudge within bounds, snap + `_ack` on divergence, per-target interaction cooldowns
 
 **Near-term:**
-- Telemetry infrastructure — config snapshots, time-series aggregates, event batching for ML training pipelines
-- Hybrid BYOM — extend pluggable adapters from motor inference to full simulation phases (learned diffusion, behavior bias, narrative control)
 - Spatial hash for O(1) neighbor queries (SpatialIndex strategy swap)
 - Calibration & regression testing (2000-tick baseline with two-pool nutrients)
 - Emergent dynamics validation with 8 species (trophic cascades, Lotka-Volterra oscillations)
 - Trait-based search — θ encodes organism traits, not just rate multipliers
 - Target search — CMA-ES optimization toward text prompts via CLIP
+- Surrogate model + sensitivity analysis over ~48-dim sim_config parameter space
 
 **Medium-term:**
+- Hybrid BYOM — extend pluggable adapters from motor inference to full simulation phases (learned diffusion, behavior bias, narrative control)
 - Base/fiber architecture for multi-observer worlds — consensus on
   causal facts, private performance, reconciliation as homing intent
 - Searchable physics — allometric exponents as θ dimensions
 - Godot 3D client with latent-driven skeletal animation
 - Open-ended search — temporal novelty across simulation rollouts
+- Multi-client support — spectator mode via read-only WebSocket
 
 ## Contributing
 
