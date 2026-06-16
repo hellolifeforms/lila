@@ -18,7 +18,7 @@
 
 `līlā` is an open-source engine that grows autonomous ecosystems from simple rules. You define species, biomes, and resources — the engine handles hunger cycles, predator-prey loops, soil nutrient flows, water depletion, dormancy, and recovery. Organisms don't follow scripts; their behavior emerges from continuous state variables, hybrid automata guards, and environmental feedback.
 
-> **What you see is an intent-based client** — the server emits state, drives, and reference positions; the client decides movement, triggers interactions, and sends heartbeats back upstream. Divergence is treated as emergence, not error. Two clients ship today: a browser visualizer (modular JS, 60 Hz local agency) and a Python debug client (ImGui, telemetry timeline, replay). A 3D Godot client with skeletal animation is planned for v0.1.0. The thesis isn't pretty graphics — it's that tiny ML models, invisible to the user, make a world feel alive. See ["The Unseen Hand"](https://www.hellolifeforms.com/p/the-unseen-hand) for the full argument.
+> **What you see is an intent-based client** — the server emits state, drives, and reference positions; the client decides movement, triggers interactions, and sends heartbeats back upstream. Divergence is treated as emergence, not error. Two clients ship today: a browser visualizer (modular JS, 60 Hz local agency) and a Python debug client (ImGui, telemetry timeline, replay). A 3D Godot client with skeletal animation is planned for v0.1.0. See ["The Mathematics of Līlā"](https://www.hellolifeforms.com/p/the-mathematics-of-lila) for the full argument.
 
 ### Built for
 
@@ -381,12 +381,12 @@ The project's design direction is developed across a series of essays:
   the formal model: intent as a vector field, gaits as limit cycles,
   multi-observer worlds as base/fiber bundles. **The current roadmap
   targets the architecture described here.**
-- ["The Unseen Hand"](https://www.hellolifeforms.com/p/the-unseen-hand) —
-  on small invisible ML as the driver of felt presence. The thesis
-  behind the shipped motor adapters.
 - ["Life as It Could Be"](https://www.hellolifeforms.com/p/life-as-it-could-be) —
   on ecological substrates and foundation-model-guided artificial life
   search. The thesis behind the `search/` subsystem.
+- ["The Unseen Hand"](https://www.hellolifeforms.com/p/the-unseen-hand) —
+  on small invisible ML as the driver of felt presence. The thesis
+  behind the shipped motor adapters.
 
 ## Ecosystem search
 

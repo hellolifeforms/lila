@@ -13,7 +13,7 @@
 
 līlā is a BYOM (Bring Your Own Model) ecosystem simulation engine. Users define a world in JSON — species, biome, soil, water — and the engine grows an autonomous ecosystem from simple rules. The server runs the hybrid automaton at ~0.5 Hz, emitting intent packets (state, drives, motion latents, reference positions). Clients execute local agency at 60 Hz and send heartbeats upstream. Divergence is treated as emergence, not error.
 
-The project thesis — explored in ["The Unseen Hand"](https://www.hellolifeforms.com/p/the-unseen-hand) — is that the most impactful AI is small, specialized, and invisible. Tiny ML models guide lifelike motion and behavior; the user never sees inference happening, they just see a world that feels alive.
+The project thesis — explored in ["The Pulse of Līlā"](https://www.hellolifeforms.com/p/the-pulse-of-lila) — is a global-mind / local-body architecture: the server issues intent rather than coordinates, and the client owns the performance of those facts. See also ["The Unseen Hand"](https://www.hellolifeforms.com/p/the-unseen-hand) for the argument that tiny invisible ML models are the driver of felt presence.
 
 The name comes from the Sanskrit concept of [līlā](https://www.embodiedphilosophy.com/what-is-lila/) — the spontaneous, purposeless creative unfolding of reality. There's no win condition. The world plays as itself.
 
@@ -1076,7 +1076,7 @@ Expand the shipped search pipeline from 17-dim rate tuning to trait-space search
 ## Project Links
 
 - **GitHub:** https://github.com/hellolifeforms/lila
-- **Essay:** https://www.hellolifeforms.com/p/the-unseen-hand
+- **Essay:** https://www.hellolifeforms.com/p/the-pulse-of-lila
 - **Series:** "The Geometry Beneath" on www.hellolifeforms.com
 - **Bluesky:** https://bsky.app/profile/hellolifeforms.bsky.social
 - **līlā concept:** https://www.embodiedphilosophy.com/what-is-lila/
