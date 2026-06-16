@@ -5,15 +5,19 @@
   https://github.com/hellolifeforms/lila
 -->
 
-# līlā — Project State (v0.0.1-alpha)
+# līlā — Project State (v0.0.3-alpha)
 
 ## Current Status
 
-**Tagged release: v0.0.1-alpha** — published, repo public on GitHub.
+**Tagged release: v0.0.3-alpha** — published, repo public on GitHub.
 
 līlā is a BYOM (Bring Your Own Model) ecosystem simulation engine. Users define a world in JSON — species, biome, soil, water — and the engine grows an autonomous ecosystem from simple rules. The server runs the hybrid automaton at ~0.5 Hz, emitting intent packets (state, drives, motion latents, reference positions). Clients execute local agency at 60 Hz and send heartbeats upstream. Divergence is treated as emergence, not error.
 
-The project thesis — explored in ["The Pulse of Līlā"](https://www.hellolifeforms.com/p/the-pulse-of-lila) — is a global-mind / local-body architecture: the server issues intent rather than coordinates, and the client owns the performance of those facts. See also ["The Unseen Hand"](https://www.hellolifeforms.com/p/the-unseen-hand) for the argument that tiny invisible ML models are the driver of felt presence.
+The project is explored across a series of essays:
+
+- ["The Pulse of Līlā"](https://www.hellolifeforms.com/p/the-pulse-of-lila) — the global-mind / local-body architecture; the case for a server that issues intent rather than coordinates.
+- ["The Mathematics of Līlā"](https://www.hellolifeforms.com/p/the-mathematics-of-lila) — the formal model: intent as a vector field, gaits as limit cycles, multi-observer worlds as base/fiber bundles.
+- ["The Unseen Hand"](https://www.hellolifeforms.com/p/the-unseen-hand) — on small invisible ML as the driver of felt presence.
 
 The name comes from the Sanskrit concept of [līlā](https://www.embodiedphilosophy.com/what-is-lila/) — the spontaneous, purposeless creative unfolding of reality. There's no win condition. The world plays as itself.
 
