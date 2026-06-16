@@ -19,7 +19,7 @@ DRINK_WATER_DRAIN = 0.003       # water source level removed per drink tick
 
 # ── Near-water survival bonus ─────────────────────────────────────────────────
 WATER_PROXIMITY_HUNGER_FACTOR = 0.5   # hunger relief = hunger_rate × this
-WATER_PROXIMITY_COLONY_FACTOR = 0.2   # colony_health recovery = energy_recovery × this
+WATER_PROXIMITY_COLONY_FACTOR = 0.5   # colony_health recovery = energy_recovery × this
 
 # ── Reproductive drive conditions ─────────────────────────────────────────────
 REPRO_BUILD_MIN_ENERGY = 0.5    # energy must exceed this to build drive

@@ -73,9 +73,9 @@ FLOOR_PREDATION_RELIEF = 0.10
 # cycle (travel + linger ≈ 30 ticks × hunger_rate_floor 0.008 × dt=0.1 = 0.024).
 # Butterflies need net negative drift per cycle so their average hunger stays
 # below REPRO_BUILD_MAX_HUNGER (0.5), allowing reproductive drive to build.
-# With 0.12 relief and ~0.06 hunger gained between visits, net drift is −0.004/tick,
-# keeping butterflies at ~0.3 average hunger — well within the reproduction window.
-FLOOR_POLLINATION_RELIEF = 0.12
+# With 0.25 relief and ~0.06 hunger gained between visits, net drift is −0.013/tick,
+# keeping butterflies at ~0.2 average hunger — comfortably in the reproduction window.
+FLOOR_POLLINATION_RELIEF = 0.25
 FLOOR_HEALTH_DRAIN = 0.003
 
 
