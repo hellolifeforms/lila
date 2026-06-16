@@ -33,7 +33,7 @@ REPRO_MATE_SEEK_DRIVE = 0.5     # drive above this triggers mate-seeking movemen
 STARVATION_HUNGER = 0.8         # hunger above this → health drain
 DEHYDRATION_HYDRATION = 0.15    # hydration below this → health drain
 COLONY_STRESS_HUNGER = 0.7      # colony_health starts draining
-COLONY_STRESS_ENERGY = 0.2      # colony_health starts draining
+COLONY_STRESS_ENERGY = 0.35     # colony_health starts draining
 
 # ── Plant physiology ──────────────────────────────────────────────────────────
 PLANT_BASE_WATER_DEMAND = 0.03  # base water uptake rate from soil
