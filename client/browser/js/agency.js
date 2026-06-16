@@ -5,11 +5,19 @@
 //   - Server intent (state + drives + eligibility flags)
 //   - Local perception (nearest food, water, threats from world model)
 //   - Motion latent (modulates speed, hesitation, path curvature)
+//   - Gravity well toward server ref_position (continuous pull)
 //
 // This is the "body" in "server is nervous system, client is body."
 // ═══════════════════════════════════════════════════════
 
 import { GRID_SIZE } from './constants.js';
+import { hasReconcileTarget, getReconcileTarget, advanceReconcile } from './reconciliation.js';
+
+// Gravity well: gentle pull toward ref_position, always active.
+// ~0.05 × speed per frame ≈ 3 units/s pull, enough to drift back
+// without overpowering the entity's desired behavior.
+// Each entity also has _syncSpeed (0.4..1.0) that modulates this.
+const GRAVITY_WELL_FACTOR = 0.05;
 
 /**
  * Run one frame of local agency for all mobile entities.
@@ -28,15 +36,125 @@ export function stepAgency(world, dt) {
       ent._speedSet = true;
     }
 
-    // Evaluate behavior based on state + drives + eligibility
-    const action = evaluateBehavior(ent, world);
-
-    // Execute the action (move toward target, interact, etc.)
-    executeAction(ent, action, world, dt, events);
+    // Reconciling entities meander toward their queued target
+    if (hasReconcileTarget(ent)) {
+      const [tx, tz] = getReconcileTarget(ent);
+      if (executeReconcileMeander(ent, tx, tz, world, dt)) {
+        advanceReconcile(ent);
+      }
+    } else {
+      // Normal agency: evaluate behavior + gravity well toward ref
+      const action = evaluateBehavior(ent, world);
+      executeAction(ent, action, world, dt, events);
+      applyGravityWell(ent, world, dt);
+    }
   }
 
   return events;
 }
+
+/**
+ * Gently pull entity toward server ref_position.
+ * Always active during normal agency. Each entity has its own
+ * _syncSpeed (0.4..1.0) so the pull strength varies per entity,
+ * making the sync look organic rather than uniform.
+ */
+function applyGravityWell(ent, world, dt) {
+  const dx = ent.refX - ent.x;
+  const dz = ent.refZ - ent.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+
+  if (dist < 0.2) return; // Already close enough
+
+  // Per-entity sync speed modulates the gravity well strength.
+  const speedFactor = ent._syncSpeed ?? 0.7;
+  const nudge = GRAVITY_WELL_FACTOR * speedFactor * dt;
+  ent.x += dx * nudge;
+  ent.z += dz * nudge;
+  ent.x = clamp(ent.x, GRID_SIZE);
+  ent.z = clamp(ent.z, GRID_SIZE);
+}
+
+/**
+ * Meander a reconciling entity toward its queued target (tx, tz).
+ *
+ * Produces a spiral/circle motion: radial pull toward target combined
+ * with a perpendicular wobble. Returns true when the entity has arrived.
+ *
+ * The approach curve accelerates as the entity gets closer — it circles
+ * wide at first then tightens into the target, like a bird landing.
+ *
+ * Each entity's _syncSpeed modulates the approach rate.
+ */
+function executeReconcileMeander(ent, tx, tz, world, dt) {
+  const dx = tx - ent.x;
+  const dz = tz - ent.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+
+  if (dist < 0.5) {
+    // Close enough — advance to next target
+    ent.velocityX = 0;
+    ent.velocityZ = 0;
+    return true;
+  }
+
+  const nx = dx / dist;
+  const nz = dz / dist;
+
+  // Perpendicular direction (rotate 90°)
+  const px = -nz;
+  const pz = nx;
+
+  const speed = ent.speed || 2.0;
+
+  // Per-entity sync speed modulates the radial approach rate.
+  const speedFactor = ent._syncSpeed ?? 0.7;
+
+  // Radial step: move toward target
+  const radialStep = Math.min(speed * 1.5 * speedFactor * dt, dist);
+
+  // Perpendicular wobble: wide circles that tighten as we approach.
+  // Wobble amplitude scales with distance — large arcs far away,
+  // gentle spirals near the target.
+  const wobblePhase = performance.now() * 0.003 * 3 + entityPhase(ent.id);
+  const wobbleAmp = Math.sin(wobblePhase) * Math.min(speed * 0.5, dist * 0.3);
+  const wobbleStep = wobbleAmp * dt;
+
+  ent.x += nx * radialStep + px * wobbleStep;
+  ent.z += nz * radialStep + pz * wobbleStep;
+  ent.x = clamp(ent.x, GRID_SIZE);
+  ent.z = clamp(ent.z, GRID_SIZE);
+
+  // Update velocity and facing
+  ent.velocityX = nx * speed * 1.5 * speedFactor + px * wobbleAmp;
+  ent.velocityZ = nz * speed * 1.5 * speedFactor + pz * wobbleAmp;
+  ent.facingAngle = lerpAngle(
+    ent.facingAngle, Math.atan2(dz, dx), 0.12
+  );
+
+  return false;
+}
+
+/**
+ * Deterministic per-entity offset for wobble phase.
+ */
+function entityPhase(eid) {
+  let h = 0;
+  for (let i = 0; i < eid.length; i++) {
+    h = (h * 31 + eid.charCodeAt(i)) & 0xFFFF;
+  }
+  return (h / 65536) * 2 * Math.PI;
+}
+
+/**
+ * Spherical lerp between two angles (handles wrapping at ±π).
+ */
+function lerpAngle(a, b, t) {
+  const diff = Math.atan2(Math.sin(b - a), Math.cos(b - a));
+  return a + diff * t;
+}
+
+// ─── Behavior Evaluators ──────────────────────────────
 
 /**
  * Evaluate what an entity should do based on its intent and local perception.
@@ -53,12 +171,12 @@ function evaluateBehavior(ent, world) {
   }
 
   // ── Drinking ──
-  if (state === 'DRINKING' || (ent.canDrink && drive.hydration < 0.3)) {
+  if (state === 'DRINKING' || (ent.canDrink && (drive.hydration ?? 1.0) < 0.3)) {
     return evaluateDrinking(ent, world);
   }
 
   // ── Reproduction seeking ──
-  if (ent.reproEligible && drive.reproductive_drive > 0.5) {
+  if (ent.reproEligible && (drive.reproductive_drive ?? 0) > 0.5) {
     const mateAction = evaluateMateSeeking(ent, world);
     if (mateAction) return mateAction;
   }
@@ -82,27 +200,25 @@ function evaluateBehavior(ent, world) {
   return evaluateWandering(ent, world);
 }
 
-// ─── Behavior Evaluators ──────────────────────────────
-
 function evaluateFleeing(ent, world, speciesDef) {
   const fleeTargets = speciesDef?.flee_targets || [];
-  if (fleeTargets.length === 0) return { type: 'wander' };
+  if (fleeTargets.length === 0) return evaluateWandering(ent, world);
 
   // Find nearest threat
   let nearestThreat = null;
-  let bestDist = Infinity;
+  let bestDistSq = Infinity;
   for (const other of world.entities.values()) {
     if (!other.isAlive) continue;
     const def = world.getSpeciesDef(other.species);
     if (!def || !fleeTargets.includes(other.species)) continue;
     const d2 = ent.distSqTo(other);
-    if (d2 < bestDist) {
-      bestDist = d2;
+    if (d2 < bestDistSq) {
+      bestDistSq = d2;
       nearestThreat = other;
     }
   }
 
-  if (nearestThreat && bestDist < 400) { // ~20 world units sensory range²
+  if (nearestThreat && bestDistSq < 400) { // ~20 world units sensory range²
     // Flee away from threat
     const dx = ent.x - nearestThreat.x;
     const dz = ent.z - nearestThreat.z;
@@ -115,7 +231,7 @@ function evaluateFleeing(ent, world, speciesDef) {
   }
 
   // No threat nearby — fall through to wander
-  return { type: 'wander' };
+  return evaluateWandering(ent, world);
 }
 
 function evaluateDrinking(ent, world) {
@@ -134,17 +250,28 @@ function evaluateDrinking(ent, world) {
       targetZ: clamp(wz - (dz / dist) * approachR, GRID_SIZE),
     };
   }
-  return { type: 'wander' }; // no water found
+  return evaluateWandering(ent, world);
 }
 
 function evaluateMateSeeking(ent, world) {
-  const mate = world.findNearestMate(ent);
-  if (mate && ent.distanceTo(mate) < 15) {
+  let best = null;
+  let bestDist = 15; // sensory range
+  for (const other of world.entities.values()) {
+    if (other.id === ent.id) continue;
+    if (other.species !== ent.species) continue;
+    if (!other.isAlive) continue;
+    const d = ent.distanceTo(other);
+    if (d < bestDist) {
+      bestDist = d;
+      best = other;
+    }
+  }
+  if (best) {
     return {
       type: 'seek_mate',
-      targetX: mate.x,
-      targetZ: mate.z,
-      targetId: mate.id,
+      targetX: best.x,
+      targetZ: best.z,
+      targetId: best.id,
     };
   }
   return null; // no mate nearby, fall through to other behaviors
@@ -154,7 +281,9 @@ function evaluateForaging(ent, world, speciesDef) {
   const dietOrder = speciesDef?.diet_order || [];
 
   // Try each food preference in order
-  for (const [foodSpecies] of dietOrder) {
+  for (const entry of dietOrder) {
+    // Handle both tuple format ["species", 1.0] and bare string "species"
+    const foodSpecies = Array.isArray(entry) ? entry[0] : entry;
     const food = world.findNearestSpecies(ent.x, ent.z, [foodSpecies], ent.id);
     if (food && ent.distanceTo(food) < 15) {
       return {
@@ -167,12 +296,14 @@ function evaluateForaging(ent, world, speciesDef) {
   }
 
   // No preferred food — wander to search
-  return { type: 'wander' };
+  return evaluateWandering(ent, world);
 }
 
 function evaluateHunting(ent, world, speciesDef) {
   const dietOrder = speciesDef?.diet_order || [];
-  const preySpecies = dietOrder.map(([s]) => s);
+  const preySpecies = dietOrder.map(entry =>
+    Array.isArray(entry) ? entry[0] : entry
+  );
 
   if (preySpecies.length > 0) {
     const prey = world.findNearestSpecies(ent.x, ent.z, preySpecies, ent.id);
@@ -187,12 +318,12 @@ function evaluateHunting(ent, world, speciesDef) {
   }
 
   // No prey — wander (or fall back to foraging if omnivore)
-  return { type: 'wander' };
+  return evaluateWandering(ent, world);
 }
 
 function evaluatePollination(ent, world, speciesDef) {
   const pollTargets = speciesDef?.pollination_targets || [];
-  if (pollTargets.length === 0) return { type: 'wander' };
+  if (pollTargets.length === 0) return evaluateWandering(ent, world);
 
   // Find nearest FRUITING flower
   for (const flower of world.entities.values()) {
@@ -211,7 +342,7 @@ function evaluatePollination(ent, world, speciesDef) {
   }
 
   // No fruiting flowers — wander to search
-  return { type: 'wander' };
+  return evaluateWandering(ent, world);
 }
 
 function evaluateWandering(ent, world) {
@@ -244,46 +375,38 @@ function evaluateWandering(ent, world) {
  * Handles movement toward target and interaction triggers.
  */
 function executeAction(ent, action, world, dt, events) {
-  if (!action || !action.targetX && action.type !== 'wander') return;
+  if (!action || (!action.targetX && action.type !== 'wander')) return;
 
   const ml = ent.motionLatent || [0, 0, 0, 0];
   const urgency = (ml[0] + 1) * 0.5; // normalize to 0..1
   const caution = Math.abs(ml[1]);   // dim 1 = alertness
 
   // Base speed from species or default
-  let baseSpeed = ent.speed || 2.0;
+  const baseSpeed = ent.speed || 2.0;
 
-  // Modulate speed by action type and latent urgency
-  switch (action.type) {
-    case 'flee':
-      baseSpeed *= 1.5 + urgency * 0.5; // flee fast
-      break;
-    case 'hunt':
-      baseSpeed *= 1.2 + urgency * 0.3;
-      break;
-    case 'forage':
-      baseSpeed *= 0.8 + urgency * 0.4;
-      break;
-    case 'drink':
-      baseSpeed *= 0.7; // approach water calmly
-      break;
-    case 'seek_mate':
-      baseSpeed *= 0.6 + urgency * 0.3;
-      break;
-    case 'pollinate':
-      baseSpeed *= 0.5 + urgency * 0.3; // butterflies are slow
-      break;
-    default: // wander
-      baseSpeed *= 0.3 + (1 - caution) * 0.4;
-  }
+  // Modulate speed by action type
+  const speedMods = {
+    flee: 1.5 + urgency * 0.5,
+    hunt: 1.2 + urgency * 0.3,
+    forage: 0.8 + urgency * 0.4,
+    drink: 0.7,
+    seek_mate: 0.6 + urgency * 0.3,
+    pollinate: 0.5 + urgency * 0.3,
+  };
+  const speedMod = speedMods[action.type] ?? (0.3 + (1 - caution) * 0.4);
+
+  const effectiveSpeed = baseSpeed * speedMod;
+
+  const targetX = action.targetX ?? ent.x;
+  const targetZ = action.targetZ ?? ent.z;
 
   // Move toward target
-  const dx = action.targetX - ent.x;
-  const dz = action.targetZ - ent.z;
+  const dx = targetX - ent.x;
+  const dz = targetZ - ent.z;
   const dist = Math.sqrt(dx * dx + dz * dz);
 
   if (dist > 0.1) {
-    const step = Math.min(baseSpeed * dt, dist);
+    const step = Math.min(effectiveSpeed * dt, dist);
     // Add slight curvature based on caution (dim 1) — high caution = more wobble
     const wobble = caution * Math.sin(performance.now() * 0.003 + ent.x) * 0.3;
 
@@ -292,8 +415,12 @@ function executeAction(ent, action, world, dt, events) {
     ent.x = clamp(ent.x, GRID_SIZE);
     ent.z = clamp(ent.z, GRID_SIZE);
 
-    ent.velocityX = (dx / dist) * baseSpeed;
-    ent.velocityZ = (dz / dist) * baseSpeed;
+    ent.velocityX = (dx / dist) * effectiveSpeed;
+    ent.velocityZ = (dz / dist) * effectiveSpeed;
+
+    // Lerp facing angle toward travel direction (smooth rotation)
+    const targetAngle = Math.atan2(dz, dx);
+    ent.facingAngle = lerpAngle(ent.facingAngle, targetAngle, 0.15);
   } else {
     // Arrived at target
     ent.velocityX = 0;
@@ -308,8 +435,8 @@ function executeAction(ent, action, world, dt, events) {
     }
   }
 
-  ent.targetX = action.targetX;
-  ent.targetZ = action.targetZ;
+  ent.targetX = targetX;
+  ent.targetZ = targetZ;
   ent._lastActionType = action.type;
   ent.hasTarget = true;
 }
@@ -320,7 +447,10 @@ function executeAction(ent, action, world, dt, events) {
  * Uses per-target cooldown to prevent event spam.
  */
 function checkInteraction(ent, action, world, events) {
-  const targetEnt = action.targetId ? world.entities.get(action.targetId) : null;
+  const targetId = action.targetId;
+  if (!targetId) return;
+
+  const targetEnt = world.entities.get(targetId);
   if (!targetEnt || !targetEnt.isAlive) return;
 
   const dist = ent.distanceTo(targetEnt);
@@ -328,9 +458,10 @@ function checkInteraction(ent, action, world, events) {
 
   // Cooldown: don't re-interact with same target within 2 seconds
   const now = performance.now();
-  const key = `${ent.id}:${action.targetId}`;
   if (!ent._interactionCooldowns) ent._interactionCooldowns = {};
-  if (ent._interactionCooldowns[key] && now - ent._interactionCooldowns[key] < 2000) {
+  const key = `${ent.id}:${targetId}`;
+  const cooldownMs = 2000;
+  if (ent._interactionCooldowns[key] && (now - ent._interactionCooldowns[key]) < cooldownMs) {
     return; // still on cooldown
   }
 
@@ -340,7 +471,7 @@ function checkInteraction(ent, action, world, events) {
         events.push({
           type: 'consumption',
           source_id: ent.id,
-          target_id: targetEnt.id,
+          target_id: targetId,
           position: [targetEnt.x, 0, targetEnt.z],
         });
         ent._interactionCooldowns[key] = now;
@@ -352,7 +483,7 @@ function checkInteraction(ent, action, world, events) {
         events.push({
           type: 'predation',
           source_id: ent.id,
-          target_id: targetEnt.id,
+          target_id: targetId,
           kill_position: [targetEnt.x, 0, targetEnt.z],
         });
         ent._interactionCooldowns[key] = now;
@@ -364,7 +495,7 @@ function checkInteraction(ent, action, world, events) {
         events.push({
           type: 'pollination',
           source_id: ent.id,
-          target_id: targetEnt.id,
+          target_id: targetId,
           position: [targetEnt.x, 0, targetEnt.z],
         });
         ent._interactionCooldowns[key] = now;

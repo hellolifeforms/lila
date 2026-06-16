@@ -262,10 +262,10 @@ function drawDeer(ctx, cx, cz, ent) {
   const hunger = ent.drive?.hunger ?? 0;
   const size = state === 'RESTING' ? 5 : 7;
 
-  // Direction from velocity
-  const dx = ent.velocityX || 0;
-  const dz = ent.velocityZ || 0;
-  const angle = Math.atan2(dz, dx);
+  // Use facingAngle for smooth rotation, fallback to velocity direction
+  const angle = ent.facingAngle !== undefined && (ent.velocityX || ent.velocityZ)
+    ? ent.facingAngle
+    : Math.atan2(ent.velocityZ || 0, ent.velocityX || 1);
 
   ctx.save();
   ctx.translate(cx, cz);
@@ -327,9 +327,10 @@ function drawBird(ctx, cx, cz, ent) {
   const state = ent.state || 'IDLE';
   const time = performance.now() * 0.001;
 
-  const dx = ent.velocityX || 0;
-  const dz = ent.velocityZ || 0;
-  const angle = Math.atan2(dz, dx);
+  // Use facingAngle for smooth rotation, fallback to velocity direction
+  const angle = ent.facingAngle !== undefined && (ent.velocityX || ent.velocityZ)
+    ? ent.facingAngle
+    : Math.atan2(ent.velocityZ || 0, ent.velocityX || 1);
 
   ctx.save();
   ctx.translate(cx, cz);

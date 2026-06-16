@@ -54,8 +54,16 @@ export class WorldEntity {
     this.velocityZ = 0;
     this.speed = 1.0;       // derived from species or default
 
+    // Facing angle (radians, smoothed via lerp toward velocity direction)
+    this.facingAngle = 0;
+
     // Acknowledgment tracking
     this.ackReceived = false;
+
+    // Reconciliation queue — target positions enqueued by reconcile(),
+    // consumed smoothly by the agency system at 60fps.
+    this._reconcileQueue = [];
+    this._reconcileIdx = 0;
 
     // ── Per-entity sync personality (deterministic from ID) ──
     // Spread out reconciliation so entities don't all nudge at once.
