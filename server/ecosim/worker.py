@@ -46,15 +46,27 @@ from typing import Any
 
 from .adapters import create_adapter
 from .engine import EcosystemEngine
+from .telemetry import (
+    TelemetryBus,
+    TelemetrySubscriber,
+    build_telemetry_response,
+    log_absorption,
+    wrap_tick_packet,
+)
 
 logger = logging.getLogger("lila.worker")
 
 # -- Configuration -----------------------------------------------------------
 
-DEFAULT_TICK_RATE = 0.1     # seconds between ticks (10 Hz)
+DEFAULT_TICK_RATE = 2.0     # seconds between ticks (0.5 Hz — intent-based)
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8001
 MAX_TICK_DRIFT = 0.05       # max acceptable drift before skipping sleep
+HEARTBEAT_INTERVAL = 1.0    # seconds between client heartbeat sends
+
+# Global telemetry registry — maps session_id → TelemetryBus.
+# Allows /logs and /telemetry endpoints to access active sessions.
+_telemetry_registry: dict[str, TelemetryBus] = {}
 
 
 # -- Session -----------------------------------------------------------------
@@ -114,6 +126,9 @@ class SimulationSession:
         self.ticks_completed = 0
         self.total_step_time = 0.0
 
+        # Telemetry bus (injected by worker, optional)
+        self.telemetry: TelemetryBus | None = None
+
     @property
     def is_running(self) -> bool:
         return self._running
@@ -141,6 +156,35 @@ class SimulationSession:
             "Rain triggered at tick %d (intensity=%.1f)",
             self.engine.tick, intensity,
         )
+
+    def absorb_heartbeat(self, msg: dict[str, Any]) -> None:
+        """Absorb client heartbeat — positions and interaction events.
+
+        Heartbeat messages from the client carry:
+          - positions: { entity_id: [x, y, z], ... } — for reconciliation
+          - events: [{ type, source_id, target_id, ... }, ...] —
+            client-reported interactions (repro, consumption, predation)
+
+        The server absorbs these into its simulation state through the
+        engine's absorption layer. See EcosystemEngine.absorb_client_positions()
+        and absorb_client_events() for details.
+        """
+        positions = msg.get("positions", {})
+        if positions:
+            self.engine.absorb_client_positions(positions)
+
+        events = msg.get("events", [])
+        if events:
+            self.engine.absorb_client_events(events)
+
+        # Log absorption for coherence debugging
+        if self.telemetry and (positions or events):
+            log_absorption(
+                self.telemetry,
+                tick=self.engine.tick,
+                positions=positions,
+                events=events,
+            )
 
     def step(self) -> dict[str, Any]:
         """Run a single tick and return the packet."""
@@ -190,9 +234,16 @@ class SimulationSession:
 
                 if not self._paused:
                     packet = self.step()
-                    packet["session_id"] = self.world_config.get(
-                        "session_id", "unknown"
-                    )
+                    session_id = self.world_config.get("session_id", "unknown")
+                    packet["session_id"] = session_id
+
+                    # Telemetry: log tick events (intent_emit, spawns, removals)
+                    if self.telemetry:
+                        wrap_tick_packet(self.telemetry, packet, session_id)
+                        # Piggyback telemetry events on tick packets for client streaming
+                        recent = self.telemetry.query(limit=50)
+                        if recent:
+                            packet["_telemetry"] = recent
 
                     try:
                         await send_fn(json.dumps(packet))
@@ -237,6 +288,8 @@ CONTROL_HANDLERS = {
     "resume": lambda session, _msg: session.resume(),
     "shutdown": lambda session, _msg: session.stop(),
     "rain": lambda session, msg: session.rain(msg.get("intensity", 0.5)),
+    # Client agency heartbeat — positions + interaction events
+    "heartbeat": lambda session, msg: session.absorb_heartbeat(msg),
 }
 
 
@@ -287,11 +340,56 @@ async def handle_client_messages(
 
 # -- WebSocket server --------------------------------------------------------
 
+async def handle_telemetry_subscriber(websocket) -> None:
+    """Handle a /telemetry WebSocket connection — streams real-time events."""
+    import urllib.parse
+
+    # Parse filter parameters from the query string
+    path = getattr(websocket, "path", "/telemetry")
+    params = {}
+    if "?" in path:
+        for part in path.split("?", 1)[1].split("&"):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                params[urllib.parse.unquote(k)] = urllib.parse.unquote(v)
+
+    # Find the most recent active session's bus
+    target_bus = None
+    for bus in reversed(_telemetry_registry.values()):
+        target_bus = bus
+        break
+
+    if target_bus is None:
+        await websocket.send(json.dumps({"error": "no active session"}))
+        await websocket.close()
+        return
+
+    subscriber = TelemetrySubscriber(websocket, filters=params)
+    target_bus.add_subscriber(subscriber)
+
+    try:
+        # Keep the connection alive — client sends nothing, we push events
+        async for _ in websocket:
+            pass  # client messages are ignored (firehose mode)
+    except Exception:
+        pass
+    finally:
+        target_bus.remove_subscriber(subscriber)
+
+
 async def handle_connection(websocket) -> None:
     """
-    Handle a single WebSocket connection through its full lifecycle:
-    receive world def → run simulation → clean shutdown.
+    Dispatch WebSocket connections based on path:
+      /ws        → simulation session
+      /telemetry → real-time event stream subscriber
     """
+    path = getattr(websocket, "path", "/ws")
+
+    if path == "/telemetry":
+        await handle_telemetry_subscriber(websocket)
+        return
+
+    # Default: simulation session on /ws
     remote = getattr(websocket, "remote_address", ("unknown", 0))
     logger.info("Client connected: %s", remote)
 
@@ -325,17 +423,34 @@ async def handle_connection(websocket) -> None:
         len(world_config.get("entities", [])),
     )
 
-    # Step 2: Send acknowledgement
+    # Step 2: Initialize session (before ack so we can include species defs)
+    session = SimulationSession(world_config)
+
+    # Telemetry bus for this session
+    telemetry = TelemetryBus(session_id=session_id)
+    telemetry.start()
+    _telemetry_registry[session_id] = telemetry
+    session.telemetry = telemetry
+
+    telemetry.info(
+        tick=0, src="worker", evt="session_init",
+        detail={"entity_count": len(world_config.get("entities", []))},
+    )
+
+    # Build species definitions for client-side agency
+    species_defs = session.engine.get_species_definitions()
+
+    # Step 3: Send acknowledgement with species reference
     ack = json.dumps({
         "type": "session_started",
         "session_id": session_id,
         "tick_rate": DEFAULT_TICK_RATE,
         "entity_count": len(world_config.get("entities", [])),
+        "species": species_defs,  # lightweight species reference for client
     })
     await websocket.send(ack)
 
-    # Step 3: Initialize session and run
-    session = SimulationSession(world_config)
+    # Step 4: Run tick loop and client listener as concurrent tasks
 
     # Run tick loop and client listener as concurrent tasks
     tick_task = asyncio.create_task(
@@ -367,6 +482,15 @@ async def handle_connection(websocket) -> None:
             logger.error("Task error: %s", task.exception())
 
     logger.info("Session %s ended: %d ticks", session_id, session.ticks_completed)
+
+    # Shut down telemetry bus (flushes remaining events to disk)
+    if telemetry:
+        telemetry.warn(
+            tick=session.engine.tick, src="worker", evt="session_end",
+            detail={"ticks_completed": session.ticks_completed},
+        )
+        await telemetry.stop()
+        _telemetry_registry.pop(session_id, None)
 
 
 async def start_server(
@@ -441,6 +565,18 @@ async def start_server(
     else:
         logger.warning("Visualizer not found — HTTP will return 404")
 
+    # MIME types for static file serving
+    _mime = {
+        ".html": "text/html; charset=utf-8",
+        ".css":  "text/css; charset=utf-8",
+        ".js":   "application/javascript; charset=utf-8",
+        ".json": "application/json; charset=utf-8",
+        ".png":  "image/png",
+        ".jpg":  "image/jpeg",
+        ".svg":  "image/svg+xml",
+        ".ico":  "image/x-icon",
+    }
+
     world_json = None
     if world_path:
         world_json = world_path.read_bytes()
@@ -453,6 +589,26 @@ async def start_server(
         """Serve static files on non-WebSocket paths."""
         if request.path == "/ws":
             return None  # Proceed with WebSocket upgrade
+
+        # Telemetry WS endpoint — streams real-time events
+        if request.path == "/telemetry":
+            return None  # Proceed with WebSocket upgrade (handled separately)
+
+        # /logs HTTP API — query recent telemetry events
+        if request.path.startswith("/logs"):
+            target_bus = None
+            for bus in reversed(_telemetry_registry.values()):
+                target_bus = bus
+                break
+            if target_bus is None:
+                return Response(
+                    404, "Not Found",
+                    Headers({"Content-Type": "text/plain"}),
+                    b"No active telemetry session",
+                )
+            status, headers_dict, body = build_telemetry_response(target_bus, request.path)
+            resp_headers = Headers(headers_dict)
+            return Response(status, "OK" if status == 200 else "Not Found", resp_headers, body)
 
         if request.path in ("/", "/index.html"):
             if viz_html:
@@ -472,11 +628,35 @@ async def start_server(
                 )
             return Response(404, "Not Found", Headers(), b"World definition not found")
 
+        # Serve arbitrary static files from viz directory (css/, js/, etc.)
+        if viz_path:
+            import urllib.parse
+            safe_path = urllib.parse.unquote(request.path.lstrip("/"))
+            file_path = (viz_path / safe_path).resolve()
+            # Ensure the resolved path is still under viz_path (no directory traversal)
+            try:
+                file_path.relative_to(viz_path.resolve())
+            except ValueError:
+                return Response(403, "Forbidden", Headers(), b"Access denied")
+
+            if file_path.is_file():
+                ext = file_path.suffix.lower()
+                content_type = _mime.get(ext, "application/octet-stream")
+                try:
+                    data = file_path.read_bytes()
+                    return Response(
+                        200, "OK",
+                        Headers({"Content-Type": content_type}),
+                        data,
+                    )
+                except OSError as e:
+                    logger.warning("Failed to read %s: %s", safe_path, e)
+
         return Response(404, "Not Found", Headers(), b"Not found")
 
     logger.info(
-        "Starting worker on http://%s:%d (viz) + ws://%s:%d/ws (simulation)",
-        host, port, host, port,
+        "Starting worker on http://%s:%d (viz+logs) + ws://%s:%d/ws (sim) + ws://%s:%d/telemetry",
+        host, port, host, port, host, port,
     )
 
     # Handle graceful shutdown via SIGTERM/SIGINT

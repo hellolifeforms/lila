@@ -47,7 +47,7 @@
 
   "reproduction": {
     "_comment": "Entity spawning and inheritance (universal)",
-    "colony_health_repro_cost_factor": 0.3
+    "colony_health_repro_cost_factor": 0.1
   },
 
   "interactions": {

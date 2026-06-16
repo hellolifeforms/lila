@@ -19,7 +19,7 @@ DRINK_WATER_DRAIN = 0.003       # water source level removed per drink tick
 
 # ── Near-water survival bonus ─────────────────────────────────────────────────
 WATER_PROXIMITY_HUNGER_FACTOR = 0.5   # hunger relief = hunger_rate × this
-WATER_PROXIMITY_COLONY_FACTOR = 0.2   # colony_health recovery = energy_recovery × this
+WATER_PROXIMITY_COLONY_FACTOR = 0.5   # colony_health recovery = energy_recovery × this
 
 # ── Reproductive drive conditions ─────────────────────────────────────────────
 REPRO_BUILD_MIN_ENERGY = 0.5    # energy must exceed this to build drive
@@ -33,7 +33,7 @@ REPRO_MATE_SEEK_DRIVE = 0.5     # drive above this triggers mate-seeking movemen
 STARVATION_HUNGER = 0.8         # hunger above this → health drain
 DEHYDRATION_HYDRATION = 0.15    # hydration below this → health drain
 COLONY_STRESS_HUNGER = 0.7      # colony_health starts draining
-COLONY_STRESS_ENERGY = 0.2      # colony_health starts draining
+COLONY_STRESS_ENERGY = 0.35     # colony_health starts draining
 
 # ── Plant physiology ──────────────────────────────────────────────────────────
 PLANT_BASE_WATER_DEMAND = 0.03  # base water uptake rate from soil
@@ -83,7 +83,7 @@ POLLINATOR_MAX_PER_FLOWER = 5     # max pollinators lingering at one flower
 POLLINATOR_VISIT_LIMIT = 4        # visits before forced WANDERING exploration
 POLLINATOR_WANDER_COOLDOWN = 30   # ticks to wander before re-entering FORAGING
 POLLINATOR_CROWD_RADIUS = 2.5     # radius to count "at flower" pollinators
-POLLINATOR_POST_VISIT_COOLDOWN = 15  # ticks after linger ends before re-pollination
+POLLINATOR_POST_VISIT_COOLDOWN = 8  # ticks after linger ends before re-pollination
 
 # ── Child entity inheritance ──────────────────────────────────────────────────
 CHILD_HUNGER_INHERIT = 0.3      # child hunger = parent × this
