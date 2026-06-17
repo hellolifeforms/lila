@@ -5,9 +5,11 @@
   https://github.com/hellolifeforms/lila
 -->
 
+
 # līlā — Ecosystem Simulation Engine
 
-> Define a world in JSON. The engine grows an ecosystem. Nothing is scripted — everything emerges.
+> *Define a world in JSON. The engine handles ecology, physics, and population dynamics.*
+> Nothing is scripted. Everything emerges.
 
 [![CI](https://github.com/hellolifeforms/lila/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/hellolifeforms/lila/actions/workflows/test.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -25,6 +27,8 @@ docker compose up --build
 ```
 
 Open **http://localhost:8001**. A temperate meadow with deer, songbirds, butterflies, wildflowers, grass, and oak trees is running. Click **☔ Rain** to trigger recovery, or **⏺ Record** to capture dynamics.
+
+![līlā ecosystem demo](docs/assets/demo.gif)
 
 ## Architecture
 
