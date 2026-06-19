@@ -306,11 +306,6 @@ func _on_session_started(data: Dictionary) -> void:
 	# Store species definitions
 	World.species_defs = data.get("species", {})
 
-	# Send world definition if we have it
-	if not _world_def.is_empty():
-		WS.send_world_definition(_world_def)
-		print("World definition sent")
-
 	_session_started = true
 
 	# Flush dead entities periodically

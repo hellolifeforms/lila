@@ -10,6 +10,8 @@ signal session_started(data: Dictionary)
 signal tick_packet(data: Dictionary)
 signal world_json_ready(data: Dictionary)
 
+var _world_def_to_send: Dictionary = {}
+
 
 ## State
 var _ws: WebSocketPeer
@@ -26,8 +28,27 @@ var port: int = LilaConstants.DEFAULT_PORT
 
 func _ready() -> void:
 	_ws = WebSocketPeer.new()
-	# Fetch world.json on startup
-	_fetch_world_json()
+	_load_world_json_local()
+
+
+## Load world.json from local resources (avoids HTTP issues with websockets server).
+func _load_world_json_local() -> void:
+	var file: FileAccess = FileAccess.open("res://resources/world.json", FileAccess.READ)
+	if file == null:
+		push_error("Cannot open res://resources/world.json")
+		return
+	var text: String = file.get_as_text()
+	file.close()
+
+	var json_conv: JSON = JSON.new()
+	var err: Error = json_conv.parse(text)
+	if err == OK:
+		var data: Dictionary = json_conv.data
+		_world_def_to_send = data
+		world_json_ready.emit(data)
+		print("World JSON loaded from local file")
+	else:
+		push_error("Failed to parse world.json: ", json_conv.get_error_message())
 
 
 func _process(delta: float) -> void:
@@ -89,6 +110,13 @@ func _connect_to_server() -> void:
 		_is_connecting = false
 		connected.emit()
 		print("WebSocket connected")
+
+		# Send world definition if we have it
+		if not _world_def_to_send.is_empty():
+			_ws.send_text(JSON.stringify(_world_def_to_send))
+			print("World definition sent")
+			_world_def_to_send = {}
+
 		# Flush any pending sends from before connection
 		for msg in _pending_sends:
 			_ws.send_text(msg)
@@ -99,28 +127,13 @@ func _connect_to_server() -> void:
 
 
 func _fetch_world_json() -> void:
-	var http: HTTPRequest = HTTPRequest.new()
-	http.request_completed.connect(_on_world_json_received)
-	add_child(http)
-	var url: String = "http://" + host + ":" + str(port) + "/world.json"
-	var err: Error = http.request(url)
-	if err != OK:
-		push_error("Failed to fetch world.json: ", err)
-
-
-func _on_world_json_received(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
-	if response_code == 200:
-		var text: String = body.get_string_from_utf8()
-		var json_conv: JSON = JSON.new()
-		var parse_result: Error = json_conv.parse(text)
-		if parse_result == OK:
-			var data: Dictionary = json_conv.data
-			world_json_ready.emit(data)
-			print("World JSON loaded")
-		else:
-			push_error("Failed to parse world.json: ", json_conv.get_error_message())
-	else:
-		push_error("world.json HTTP error: ", response_code)
+	# Send a control request over WebSocket to get world definition.
+	# Server sends it back as the first message, or we fetch via WS.
+	# For now: send empty world definition request, server responds with session_started.
+	# The browser client fetches via HTTP — but Godot's HTTPRequest has issues
+	# with websockets library's HTTP passthrough, so we skip HTTP entirely
+	# and send world def directly if we have one.
+	pass
 
 
 func _dispatch(text: String) -> void:
