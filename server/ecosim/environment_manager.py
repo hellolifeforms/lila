@@ -55,7 +55,8 @@ class EnvironmentManager:
         self.climate: dict[str, float] = climate
 
         # ── Voxel Grid ──
-        dims = tuple(voxel_grid_cfg.get("dimensions", [32, 32, 32]))
+        raw_dims = voxel_grid_cfg.get("dimensions", [32, 32, 32])
+        dims = tuple(int(d) for d in raw_dims)  # Godot JSON stringify sends floats
         cell = voxel_grid_cfg.get("cell_size", 1.0)
         self.voxels = VoxelManager(dimensions=dims, cell_size=cell)
 
