@@ -229,8 +229,8 @@ class LayoutManager:
         rng: random.Random,
     ) -> None:
         """Spawn extra grass and flower entities for visual density."""
-        extra_grass_range = cfg.get("extra_grass", [0, 4])
-        extra_flowers_range = cfg.get("extra_flowers", [0, 2])
+        extra_grass_range = [int(x) for x in cfg.get("extra_grass", [0, 4])]
+        extra_flowers_range = [int(x) for x in cfg.get("extra_flowers", [0, 2])]
 
         grass_tpl = flower_tpl = None
         for e in entities.values():
