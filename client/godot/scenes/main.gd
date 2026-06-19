@@ -26,7 +26,13 @@ var _event_count: int = 0
 var _fps: int = 0
 var _frame_count: int = 0
 var _fps_timer: float = 0.0
-var _world_center: Vector2 = Vector2(640, 200)
+
+## Camera controls
+var _camera_offset: Vector2 = Vector2(640, 200)
+var _camera_zoom: float = 1.0
+var _dragging: bool = false
+var _drag_start: Vector2 = Vector2.ZERO
+var _drag_offset_start: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
@@ -43,8 +49,8 @@ func _ready() -> void:
 	# Initialize particle system
 	_particles = load("res://scripts/particles.gd").new()
 
-	# Center the world view
-	world_view.position = _world_center
+	# Center camera on world
+	_camera_offset = Vector2(get_viewport_rect().size.x / 2, 200)
 
 
 func _on_rain_pressed() -> void:
@@ -100,6 +106,8 @@ func _draw() -> void:
 
 func _draw_ground() -> void:
 	var size: int = LilaConstants.GRID_SIZE
+	var cw: float = CELL_W / 2.0 * _camera_zoom
+	var ch: float = CELL_H / 4.0 * _camera_zoom
 	for gz in size:
 		for gx in size:
 			var pos: Vector2 = _grid_to_screen(float(gx), float(gz))
@@ -113,10 +121,10 @@ func _draw_ground() -> void:
 
 			# Draw isometric diamond
 			var pts: PackedVector2Array = PackedVector2Array([
-				pos + Vector2(CELL_W / 2.0, 0.0),
-				pos + Vector2(CELL_W / 4.0, CELL_H / 4.0),
+				pos + Vector2(cw, 0.0),
+				pos + Vector2(cw * 0.5, ch),
 				pos + Vector2(0.0, 0.0),
-				pos + Vector2(-CELL_W / 4.0, -CELL_H / 4.0),
+				pos + Vector2(-cw * 0.5, -ch),
 			])
 			draw_colored_polygon(pts, color)
 
@@ -148,22 +156,26 @@ func _draw_entities() -> void:
 		var color: Color = _get_entity_color(ent)
 		var size: float = _get_entity_size(ent)
 
+		# Skip degenerate polygons (zero or negative size after zoom)
+		if size * _camera_zoom <= 0.1:
+			continue
+
 		# Height offset for insects
 		var height_offset: float = 0.0
 		if ent.type == "INSECT":
 			height_offset = -20.0 + sin(Time.get_ticks_msec() / 300.0 + float(ent.sync_phase)) * 5.0
 
 		var block_pos: Vector2 = pos + Vector2(0, height_offset)
-		var half_w: float = size * CELL_W / 4.0
-		var half_h: float = size * CELL_H / 4.0
+		var half_w: float = size * CELL_W / 4.0 * _camera_zoom
+		var half_h: float = size * CELL_H / 4.0 * _camera_zoom
+		var block_h: float = BLOCK_HEIGHT * size * _camera_zoom
 
 		# Draw block top face (isometric diamond)
-		var top_y: float = block_pos.y - BLOCK_HEIGHT * size
 		var top_pts: PackedVector2Array = PackedVector2Array([
-			block_pos + Vector2(half_w, -BLOCK_HEIGHT * size),
-			block_pos + Vector2(half_w * 0.5, -BLOCK_HEIGHT * size + half_h * 0.5),
-			block_pos + Vector2(0.0, -BLOCK_HEIGHT * size),
-			block_pos + Vector2(-half_w * 0.5, -BLOCK_HEIGHT * size - half_h * 0.5),
+			block_pos + Vector2(half_w, -block_h),
+			block_pos + Vector2(half_w * 0.5, -block_h + half_h * 0.5),
+			block_pos + Vector2(0.0, -block_h),
+			block_pos + Vector2(-half_w * 0.5, -block_h - half_h * 0.5),
 		])
 
 		# Darken for side effect
@@ -239,8 +251,8 @@ func _draw_grid_overlay() -> void:
 
 ## Convert grid (x, z) to screen position (isometric).
 func _grid_to_screen(gx: float, gz: float) -> Vector2:
-	var sx: float = (gx - gz) * (CELL_W / 2.0) + _world_center.x
-	var sy: float = (gx + gz) * (CELL_H / 2.0) + _world_center.y
+	var sx: float = (gx - gz) * (CELL_W / 2.0) * _camera_zoom + _camera_offset.x
+	var sy: float = (gx + gz) * (CELL_H / 2.0) * _camera_zoom + _camera_offset.y
 	return Vector2(sx, sy)
 
 
@@ -374,11 +386,36 @@ func _on_tick_packet(data: Dictionary) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey:
-		if event.pressed:
-			if event.keycode == KEY_R:
-				WS.send_control("rain", {"intensity": 0.8})
-				_add_hud_event("☔ Rain triggered!")
-			elif event.keycode == KEY_SPACE:
-				WS.send_control("pause")
-				_add_hud_event("⏸ Paused")
+	# Key controls
+	if event is InputEventKey and event.pressed:
+		if event.keycode == Key.R:
+			WS.send_control("rain", {"intensity": 0.8})
+			_add_hud_event("☔ Rain triggered!")
+		elif event.keycode == Key.SPACE:
+			WS.send_control("pause")
+			_add_hud_event("⏸ Paused")
+
+	# Camera pan with right/middle mouse drag
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_RIGHT or event.button_index == MOUSE_BUTTON_MIDDLE:
+			if event.pressed:
+				_dragging = true
+				_drag_start = event.position
+				_drag_offset_start = _camera_offset
+			else:
+				_dragging = false
+
+	# Camera zoom with mouse wheel
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_camera_zoom = minf(_camera_zoom * 1.2, 4.0)
+			queue_redraw()
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_camera_zoom = maxf(_camera_zoom * 0.8, 0.2)
+			queue_redraw()
+
+	# Pan while dragging
+	if _dragging and event is InputEventMouseMotion:
+		var delta: Vector2 = event.position - _drag_start
+		_camera_offset = _drag_offset_start + delta
+		queue_redraw()
