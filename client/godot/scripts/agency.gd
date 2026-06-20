@@ -28,53 +28,59 @@ func _step_entity(ent, world: Node, delta: float, now: float) -> Array:
 		return events
 
 	# Check for reconcile target first
-	if ent.reconcile_queue.size() > 0:
+	if ent.reconcile_idx < ent.reconcile_queue.size():
+		ent.last_action_type = "reconciling"
 		_execute_reconcile(ent, delta)
 		return events
 
 	# Evaluate behavior priority chain
 	var target: Vector2 = Vector2.ZERO
-	var behavior: String = ""
 
 	if ent.state == "FLEEING":
 		var flee_result: Dictionary = _evaluate_fleeing(ent, world)
 		target = flee_result.get("target", Vector2.ZERO)
-		behavior = "fleeing"
+		ent.last_action_type = "fleeing"
 	elif ent.state == "DRINKING" or (ent.can_drink and ent.drive.get("hydration", 1.0) < 0.3):
 		var drink_result: Dictionary = _evaluate_drinking(ent, world)
 		target = drink_result.get("target", Vector2.ZERO)
-		behavior = "drinking"
+		ent.last_action_type = "drinking"
 	elif ent.repro_eligible and ent.drive.get("reproductive_drive", 0.0) > 0.5:
 		var mate_result: Dictionary = _evaluate_mate_seeking(ent, world)
 		target = mate_result.get("target", Vector2.ZERO)
-		behavior = "reproducing"
+		ent.last_action_type = "seek_mate"
 	elif ent.state == "FORAGING" and ent.can_consume:
 		var forage_result: Dictionary = _evaluate_foraging(ent, world)
 		target = forage_result.get("target", Vector2.ZERO)
-		behavior = "foraging"
+		ent.last_action_type = "foraging"
 		events.append_array(forage_result.get("events", []))
 	elif ent.state == "HUNTING" and ent.can_predate:
 		var hunt_result: Dictionary = _evaluate_hunting(ent, world)
 		target = hunt_result.get("target", Vector2.ZERO)
-		behavior = "hunting"
+		ent.last_action_type = "hunting"
 		events.append_array(hunt_result.get("events", []))
 	elif ent.can_pollinate:
 		var poll_result: Dictionary = _evaluate_pollination(ent, world)
 		target = poll_result.get("target", Vector2.ZERO)
-		behavior = "pollinating"
+		ent.last_action_type = "pollinating"
 		events.append_array(poll_result.get("events", []))
 	else:
 		target = _evaluate_wandering(ent, delta)
-		behavior = "wandering"
+		ent.last_action_type = "wander"
 
 	# Move toward target
 	if target != Vector2.ZERO:
 		_move_toward(ent, target, delta, world)
 
 	# Gravity well: gentle pull toward server reference position
+	# Multiplied by delta for frame-rate independence (mirrors Python/browser)
 	var speed_factor: float = ent.sync_speed
-	ent.x += (ent.ref_x - ent.x) * LilaConstants.GRAVITY_WELL_FACTOR * speed_factor
-	ent.z += (ent.ref_z - ent.z) * LilaConstants.GRAVITY_WELL_FACTOR * speed_factor
+	var dx_gw: float = ent.ref_x - ent.x
+	var dz_gw: float = ent.ref_z - ent.z
+	var dist_gw: float = sqrt(dx_gw * dx_gw + dz_gw * dz_gw)
+	if dist_gw > 0.2:  # Skip if already close enough (mirrors Python/browser threshold)
+		var nudge: float = LilaConstants.GRAVITY_WELL_FACTOR * speed_factor * delta
+		ent.x += dx_gw * nudge
+		ent.z += dz_gw * nudge
 
 	# Clamp to grid bounds
 	ent.x = clampf(ent.x, 0.0, float(LilaConstants.GRID_SIZE - 1))
@@ -302,18 +308,21 @@ func _evaluate_pollination(ent, world: Node) -> Dictionary:
 
 
 func _evaluate_wandering(ent, delta: float) -> Vector2:
-	# Random wander target modulated by motion latent
+	# Reuse existing wander target if still valid and not reached (mirrors Python/browser)
+	if ent.has_target and ent.last_action_type == "wander":
+		var dtx: float = ent.target_x - ent.x
+		var dtz: float = ent.target_z - ent.z
+		if sqrt(dtx * dtx + dtz * dtz) > 0.5:
+			return Vector2(ent.target_x, ent.target_z)
+
+	# Pick new wander target modulated by motion latent
 	var latent: PackedFloat32Array = ent.motion_latent
 	var pace: float = 1.0
-	var caution: float = 0.0
-	if latent.size() >= 2:
+	if latent.size() >= 1:
 		pace = 0.5 + latent[0] * 0.5  # Map to 0-1 range roughly
-		caution = latent[1]
 
 	var wander_range: float = LilaConstants.WANDER_MARGIN * pace
-	var wobble: float = caution * 2.0
-
-	var angle: float = randf() * TAU * wobble + ent.facing_angle
+	var angle: float = randf() * TAU
 	var target_x: float = clampf(ent.x + cos(angle) * wander_range, 0.0, float(LilaConstants.GRID_SIZE - 1))
 	var target_z: float = clampf(ent.z + sin(angle) * wander_range, 0.0, float(LilaConstants.GRID_SIZE - 1))
 
@@ -324,9 +333,6 @@ func _move_toward(ent, target: Vector2, delta: float, world: Node) -> void:
 	var dx: float = target.x - ent.x
 	var dz: float = target.y - ent.z
 	var dist: float = sqrt(dx * dx + dz * dz)
-
-	if dist < LilaConstants.ARRIVAL_DISTANCE:
-		return
 
 	# Speed from species definition
 	var species_def: Dictionary = world.species_defs.get(ent.species, {})
@@ -341,9 +347,18 @@ func _move_toward(ent, target: Vector2, delta: float, world: Node) -> void:
 	var move_dist: float = max_speed * pace * delta
 	move_dist = minf(move_dist, dist)
 
+	if dist < LilaConstants.ARRIVAL_DISTANCE:
+		ent.has_target = false
+		return
+
 	var move_x: float = (dx / dist) * move_dist
 	var move_z: float = (dz / dist) * move_dist
 
 	ent.x += move_x
 	ent.z += move_z
 	ent.facing_angle = atan2(dz, dx)
+
+	# Track target for wander persistence (mirrors Python/browser hasTarget)
+	ent.target_x = target.x
+	ent.target_z = target.y
+	ent.has_target = true

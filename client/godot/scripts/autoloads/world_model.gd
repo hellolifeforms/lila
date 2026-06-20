@@ -38,7 +38,7 @@ class WorldEntity:
 	## Acknowledgment from server
 	var ack: bool = false
 
-	## Reconciliation
+	## Reconciliation — queue of target positions consumed smoothly by agency
 	var reconcile_queue: PackedVector2Array = PackedVector2Array()
 	var reconcile_idx: int = 0
 
@@ -49,6 +49,15 @@ class WorldEntity:
 	## Rendering
 	var facing_angle: float = 0.0
 	var alive: bool = true
+
+	## Wander target persistence (mirrors browser/Python hasTarget + targetX/targetZ)
+	var target_x: float = 0.0
+	var target_z: float = 0.0
+	var has_target: bool = false
+	var last_action_type: String = ""
+
+	## Reconciliation tracking (mirrors browser/Python _lastReconciledTick)
+	var last_reconciled_tick: int = -10
 
 	func _init(entity_id: String, etype: String, especies: String):
 		id = entity_id
@@ -87,13 +96,23 @@ func apply_update(data: Dictionary) -> void:
 	if eid.is_empty():
 		return
 
+	var is_new: bool = false
 	var ent: WorldEntity = entities.get(eid)
 	if ent == null:
+		is_new = true
 		ent = WorldEntity.new(eid, data.get("type", "ANIMAL"), data.get("species", "unknown"))
 		entities[eid] = ent
 
-	ent.ref_x = _vec_x(data.get("ref_position", [0, 0, 0]))
-	ent.ref_z = _vec_z(data.get("ref_position", [0, 0, 0]))
+	var pos: Variant = data.get("ref_position", [0, 0, 0])
+	ent.ref_x = _vec_x(pos)
+	ent.ref_z = _vec_z(pos)
+
+	# Initialize local position from server ref on first contact
+	# (mirrors Python client's apply_update behavior)
+	if is_new:
+		ent.x = ent.ref_x
+		ent.z = ent.ref_z
+
 	ent.state = data.get("state", ent.state)
 
 	var drive_data: Dictionary = data.get("drive", {})
