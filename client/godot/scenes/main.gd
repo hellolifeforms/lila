@@ -1,12 +1,15 @@
 ## Main scene - 3D world view with orbit camera.
 ## Grid coordinates map 1:1 to world X/Z; Y is height.
+## Uses primitive-based InstancedMesh rendering per entity type.
 extends Node3D
 
 
 @onready var camera: Camera3D = $Camera
+@onready var renderer: Node = $Renderer
 @onready var ground_mi: MeshInstance3D = $Ground
-@onready var entity_multi: MultiMeshInstance3D = $Entities
+@onready var entity_parent: Node3D = $Entities
 @onready var particle_instance: MultiMeshInstance3D = $Particles
+@onready var water_parent: Node3D = $WaterSources
 @onready var hud: CanvasLayer = $HUD
 @onready var stats_label: Label = $HUD/VBox/StatsLabel
 @onready var event_log: RichTextLabel = $HUD/VBox/EventLog
@@ -25,12 +28,14 @@ var _fps: int = 0
 var _frame_count: int = 0
 var _fps_timer: float = 0.0
 
-## Entity block height in world units.
-const BLOCK_HEIGHT: float = 2.0
+# Renderer state
+var _type_meshes: Dictionary = {}
+var _water_shader_mat: Object = null
+var _water_instances: Dictionary = {}
 
 
 func _ready() -> void:
-	print("Lila Godot Client starting (3D)...")
+	print("Lila Godot Client starting (3D — primitive renderer)...")
 
 	WS.session_started.connect(_on_session_started)
 	WS.tick_packet.connect(_on_tick_packet)
@@ -39,7 +44,7 @@ func _ready() -> void:
 
 	_particles = load("res://scripts/particles.gd").new()
 	_setup_particles()
-	_setup_entities()
+	_setup_renderer()
 
 	# Orbit target = center of grid
 	camera.target = Vector3(
@@ -50,26 +55,27 @@ func _ready() -> void:
 	camera._update_position()
 
 
-# ── Entity MultiMesh setup ────────────────────────────────────────
+# ── Renderer setup ────────────────────────────────────────────────────
 
-func _setup_entities() -> void:
-	var box: BoxMesh = BoxMesh.new()
-	box.size = Vector3(1.0, 1.0, 1.0)
+func _setup_renderer() -> void:
+	# Build composite ArrayMeshes for each entity type
+	var meshes: Dictionary = renderer.build_all_type_meshes()
 
-	var mm: MultiMesh = MultiMesh.new()
-	mm.mesh = box
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
-	mm.instance_count = 0
-	entity_multi.multimesh = mm
+	# Create InstancedMesh nodes under Entities parent
+	_type_meshes = renderer.setup_type_meshes(entity_parent, meshes)
+
+	# Water material — semi-transparent blue pool
+	_water_shader_mat = StandardMaterial3D.new()
+	_water_shader_mat.albedo_color = Color(0.22, 0.42, 0.53, 0.6)
+	_water_shader_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_water_shader_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 
 
-# ── Particle MultiMesh setup ──────────────────────────────────────
+# ── Particle MultiMesh setup ──────────────────────────────────────────
 
 func _setup_particles() -> void:
-	# Tiny box as particle marker (SphereMesh API changed in 4.7)
 	var box: BoxMesh = BoxMesh.new()
-	box.size = Vector3(0.4, 0.4, 0.4)
+	box.size = Vector3(0.3, 0.3, 0.3)
 
 	var mm: MultiMesh = MultiMesh.new()
 	mm.mesh = box
@@ -99,9 +105,7 @@ func _update_particle_mesh() -> void:
 		mm.set_instance_color(i, c)
 
 
-# ── ImmediateMesh rendering ──────────────────────────────────────
-# Ground mesh: locked once in _ready, updated every frame.
-# Entity mesh: same pattern.
+# ── Main loop ─────────────────────────────────────────────────────────
 
 func _process(delta: float) -> void:
 	# FPS counter
@@ -124,77 +128,34 @@ func _process(delta: float) -> void:
 		# Rebuild meshes every frame
 		_build_ground()
 		_build_entities()
+		_build_water()
 		_update_particle_mesh()
 
 
 ## Build ground tiles as ArrayMesh via SurfaceTool.
 func _build_ground() -> void:
-	var st: SurfaceTool = SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-
-	var size: int = LilaConstants.GRID_SIZE
-	var half: float = 0.49  # slight gap avoids z-fighting seams
-
-	for gz in size:
-		for gx in size:
-			var idx: int = gx + gz * size
-			var moisture: float = 0.5
-			if idx < World.moisture_grid.size():
-				moisture = World.moisture_grid[idx]
-			st.set_color(_moisture_color(moisture))
-
-			var cx: float = float(gx)
-			var cz: float = float(gz)
-			# Two triangles per tile
-			st.add_vertex(Vector3(cx - half, 0.0, cz - half))
-			st.add_vertex(Vector3(cx + half, 0.0, cz - half))
-			st.add_vertex(Vector3(cx - half, 0.0, cz + half))
-			st.add_vertex(Vector3(cx + half, 0.0, cz - half))
-			st.add_vertex(Vector3(cx + half, 0.0, cz + half))
-			st.add_vertex(Vector3(cx - half, 0.0, cz + half))
-
-	st.generate_normals()
-	var mesh: Mesh = st.commit()
+	var mesh: Mesh = renderer.build_ground_mesh(World.moisture_grid)
 	ground_mi.mesh = mesh
 
 
-## Build entity cubes as MultiMesh instances (BoxMesh primitive).
+## Update all per-type InstancedMesh entities.
 func _build_entities() -> void:
-	var mm: MultiMesh = entity_multi.multimesh
-	if mm == null:
-		return
-
 	var entities: Array = World.get_alive()
-	mm.instance_count = entities.size()
-
-	for i in entities.size():
-		var ent = entities[i]
-		if is_nan(ent.x) or is_nan(ent.z) or is_inf(ent.x) or is_inf(ent.z):
-			continue
-
-		var color: Color = _get_entity_color(ent)
-		var size: float = _get_entity_size(ent)
-
-		var y_off: float = 0.0
-		if ent.type == "INSECT":
-			y_off = 3.0 + sin(Time.get_ticks_msec() / 300.0 + float(ent.sync_phase)) * 0.8
-
-		var cx: float = ent.x
-		var cy: float = BLOCK_HEIGHT * size * 0.5 + y_off
-		var cz: float = ent.z
-
-		# Dormant entities are darker
-		if ent.state == "DORMANT":
-			color = color.darkened(0.5)
-
-		var t: Transform3D
-		t.origin = Vector3(cx, cy, cz)
-		t.basis = Basis.from_scale(Vector3(size, BLOCK_HEIGHT * size, size))
-		mm.set_instance_transform(i, t)
-		mm.set_instance_color(i, color)
+	renderer.update_entities(_type_meshes, entities)
 
 
-# ── Input ─────────────────────────────────────────────────────────
+## Build / update water source meshes.
+func _build_water() -> void:
+	# Pulse water alpha slightly over time
+	var t: float = sin(Time.get_ticks_msec() / 1000.0) * 0.05
+	_water_shader_mat.albedo_color.a = clampf(0.55 + t, 0.3, 0.8)
+
+	_water_instances = renderer.update_water_sources(
+		water_parent, World, _water_shader_mat
+	)
+
+
+# ── Input ─────────────────────────────────────────────────────────────
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed:
@@ -206,7 +167,7 @@ func _input(event: InputEvent) -> void:
 			_add_hud_event("⏸ Paused")
 
 
-# ── WebSocket callbacks ───────────────────────────────────────────
+# ── WebSocket callbacks ────────────────────────────────────────────────
 
 func _on_rain_pressed() -> void:
 	WS.send_control("rain", {"intensity": 0.8})
@@ -270,12 +231,12 @@ func _on_tick_packet(data: Dictionary) -> void:
 	if _current_tick % 10 == 0:
 		World.flush_dead()
 
-	# Debug: log entity positions every 10 ticks for telemetry comparison
+	# Debug: log entity positions every 10 ticks
 	if _current_tick % 10 == 0:
 		_log_entity_telemetry()
 
 
-# ── HUD helpers ───────────────────────────────────────────────────
+# ── HUD helpers ────────────────────────────────────────────────────────
 
 func _update_stats() -> void:
 	stats_label.text = "Tick: %d | Entities: %d | Events: %d | FPS: %d" % [
@@ -292,45 +253,9 @@ func _add_hud_event(text: String) -> void:
 		event_log.set_text("\n".join(lines.slice(-max_lines)))
 
 
-# ── Color helpers ─────────────────────────────────────────────────
-
-func _moisture_color(moisture: float) -> Color:
-	if moisture < 0.33:
-		return Color(0.9, 0.85, 0.7)
-	elif moisture < 0.66:
-		return Color(0.7, 0.8, 0.6)
-	else:
-		return Color(0.4, 0.7, 0.6)
-
-
-func _get_entity_color(ent) -> Color:
-	if ent.species in LilaConstants.SPECIES_COLORS:
-		return LilaConstants.SPECIES_COLORS[ent.species]
-	if ent.type in LilaConstants.TYPE_COLORS:
-		return LilaConstants.TYPE_COLORS[ent.type]
-	return Color(0.5, 0.5, 0.5)
-
-
-func _get_entity_size(ent) -> float:
-	match ent.type:
-		"TREE":
-			return 3.0
-		"ANIMAL":
-			return 1.5
-		"BIRD":
-			return 1.0
-		"INSECT":
-			return 0.7
-		"PLANT":
-			return 0.8
-		_: 
-			return 1.0
-
-
-# ── Telemetry / Debug helpers ──────────────────────────────────────────
+# ── Telemetry / Debug ──────────────────────────────────────────────────
 
 func _log_entity_telemetry() -> void:
-	"""Log entity positions for debugging reconciliation. Mirrors server telemetry."""
 	var mobile: Array = World.get_alive_mobile()
 	if mobile.is_empty():
 		return

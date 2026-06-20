@@ -1,12 +1,14 @@
-[gd_scene load_steps=3 format=3 uid="uid://lila_main"]
+[gd_scene load_steps=4 format=3 uid="uid://lila_main"]
 
 [ext_resource type="Script" path="res://scenes/main.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/camera/orbit_camera.gd" id="2"]
+[ext_resource type="Script" path="res://scripts/renderer.gd" id="3"]
 
 [sub_resource type="Environment" id="env1"]
 background_mode = 1
-background_color = Color(0.6, 0.72, 0.82, 1)
-glow/intensity = 0.2
+background_color = Color(0.059, 0.063, 0.059, 1)
+glow/intensity = 0.25
+ambient/light_energy_scale = 0.6
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1")
@@ -17,21 +19,32 @@ fov = 50.0
 
 [node name="WorldLight" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.707107, 0, 0.707107, 0, 1, 0, -0.707107, 0, 0.707107, 10, 15, 10)
-shadow_enabled = false
-color = Color(1, 0.95, 0.9, 1)
-energy = 2.0
+shadow_enabled = true
+color = Color(1, 0.95, 0.88, 1)
+energy = 1.8
+shadow/bias = 0.001
+shadow/normal_bias = 0.5
 
 [node name="AmbientLight" type="OmniLight3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 10, 16)
-color = Color(0.5, 0.55, 0.65, 1)
-energy = 3.0
-omni_range = 100.0
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 8, 16)
+color = Color(0.45, 0.5, 0.6, 1)
+energy = 2.0
+omni_range = 60.0
+
+[node name="Renderer" type="Node" parent="."]
+script = ExtResource("3")
 
 [node name="Ground" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+layers = 1
 
-[node name="Entities" type="MultiMeshInstance3D" parent="."]
+[node name="WaterSources" type="Node3D" parent="."]
+
+[node name="Entities" type="Node3D" parent="."]
 
 [node name="Particles" type="MultiMeshInstance3D" parent="."]
+cast_shadow = 0
+layers = 1
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("env1")
