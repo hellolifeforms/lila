@@ -936,6 +936,197 @@ Expand the shipped search pipeline from 17-dim rate tuning to trait-space search
 
 ---
 
+## Godot Client — 3D Visualization (Milestone 4, Partially Shipped)
+
+**Goal:** 3D visualization of trait-based ecosystems with orbit camera, intent-driven client agency, and real-time telemetry. Built with Godot 4.x (GDScript, `gl_compatibility` renderer).
+
+The Godot client mirrors the architecture of the browser and Python clients: WebSocket connection → intent packet parsing → local agency at 60 Hz → heartbeat absorption upstream. It renders the world in 3D with an orbit camera, MultiMesh-based entity rendering, and a particle system for event visualization.
+
+### Project Scaffolding (`client/godot/`)
+
+```ngodot/client/
+├── project.godot              # Godot 4.7 project, gl_compatibility renderer, 1280×720
+├── resources/
+│   └── world.json             # Local world definition (sent to server on connect)
+├── scenes/
+│   ├── main.tscn              # Main scene: Node3D + Camera3D + MultiMesh nodes + HUD
+│   └── main.gd                # Entry point: WS callbacks, mesh building, render loop
+├── scripts/
+│   ├── autoloads/
+│   │   ├── ws_client.gd       # WebSocket client (connect, poll, dispatch, send)
+│   │   └── world_model.gd     # WorldEntity registry + spatial queries (mirrors browser/Python)
+│   ├── agency.gd              # Client-side behavior engine (60 Hz, mirrors browser/Python)
+│   ├── heartbeat.gd           # HeartbeatSender — upstream position/event reporting (1 Hz)
+│   ├── reconciliation.gd      # Gravity-well position reconciliation
+│   ├── particles.gd           # Particle system for event visualizations (RefCounted)
+│   ├── constants.gd           # Shared constants (mirrors browser/Python)
+│   ├── renderer.gd            # Isometric helper (unused in 3D, kept for reference)
+│   └── camera/
+│       └── orbit_camera.gd    # Orbit/trackball camera controller
+└── .godot/                    # Editor state (git-ignored)
+```
+
+**Autoloads:** `WS` (ws_client.gd) and `World` (world_model.gd) are registered as singletons in `project.godot`. All other scripts access them globally.
+
+### Node Tree (`scenes/main.tscn`)
+
+```
+Main (Node3D)
+├── Camera (Camera3D + orbit_camera.gd)      — 50° FOV, spherical orbit
+├── WorldLight (DirectionalLight3D)          — warm key light, no shadows
+├── AmbientLight (OmniLight3D)               — soft fill, 100-unit range
+├── Ground (MeshInstance3D)                  — moisture heatmap grid (rebuilt every frame)
+├── Entities (MultiMeshInstance3D)           — per-entity BoxMesh cubes
+├── Particles (MultiMeshInstance3D)          — event particles (cap 500)
+├── WorldEnvironment (WorldEnvironment)     — sky color, glow
+└── HUD (CanvasLayer, layer 10)
+    └── VBox (VBoxContainer)
+        ├── StatsLabel (Label)               — tick, entity count, events, FPS
+        ├── EventLog (RichTextLabel)         — color-coded event stream (50-line buffer)
+        ├── RainButton (Button)              — "☔ Rain"
+        └── HelpLabel (Label)                — control hints
+```
+
+### WebSocket Layer (`scripts/autoloads/ws_client.gd`)
+
+Connects to `ws://localhost:8001/ws`, sends local `world.json` as the session starter. Signals emitted:
+
+- `connected` / `disconnected` — connection state
+- `session_started(data)` — server ack with species definitions
+- `tick_packet(data)` — intent packet with entity_updates, entity_spawns, entity_removals, voxel_deltas, water_sources, events
+- `world_json_ready(data)` — local world.json parsed
+
+**Dispatch logic:** Messages with `"type": "session_started"` route to `session_started`. Messages with `"tick"` key (no `"type"` field) route to `tick_packet`. Auto-reconnects with 3-second backoff.
+
+**Heartbeat send:** `send_heartbeat(positions: Dictionary, events: Array)` — called by HeartbeatSender at 1 Hz. Sends `"type": "heartbeat"` with entity positions and client-reported events.
+
+### World Model (`scripts/autoloads/world_model.gd`)
+
+Mirrors browser `world-model.js` and Python `world_model.py`.
+
+**WorldEntity fields:**
+- `id`, `type`, `species`, `skeleton_id` — identity
+- `x`, `z` — client-agency position (updated at 60 Hz by agency)
+- `ref_x`, `ref_z` — server reference position (gravity well anchor)
+- `state`, `drive`, `motion_latent` — intent fields from server
+- `can_consume`, `can_predate`, `can_pollinate`, `repro_eligible`, `can_drink` — eligibility flags
+- `ack` — server acknowledged our deviation
+- `reconcile_queue`, `reconcile_idx` — target positions for smooth reconciliation
+- `target_x`, `target_z`, `has_target`, `last_action_type` — wander target persistence
+- `last_reconciled_tick` — stagger tracking for reconciliation
+- `facing_angle`, `alive` — rendering state
+- `sync_phase` (0–3), `sync_speed` (0.4–1.0) — deterministic per-entity sync personality from ID hash
+
+**Spatial queries:** `find_nearest()`, `find_nearest_species()`, `find_nearest_mate()`, `find_nearest_water()` — used by agency evaluators.
+
+### Client-Side Agency (`scripts/agency.gd`)
+
+Runs at 60 Hz in `_process(delta)`. For each mobile entity:
+
+1. **Reconcile check** — if entity has a pending reconcile target, execute spiral-meander toward it (from reconciliation queue). Returns early.
+2. **Behavior priority chain:**
+   - FLEEING → `_evaluate_fleeing()` — flee away from nearest threat
+   - DRINKING / thirsty → `_evaluate_drinking()` — approach water source edge
+   - repro_eligible → `_evaluate_mate_seeking()` — seek nearest same-species entity
+   - FORAGING + can_consume → `_evaluate_foraging()` — approach food by diet_order
+   - HUNTING + can_predate → `_evaluate_hunting()` — approach prey
+   - can_pollinate → `_evaluate_pollination()` — approach FRUITING flowers
+   - default → `_evaluate_wandering()` — pick random wander target (reused until reached, per `has_target`/`last_action_type`)
+3. **Move toward target** — `_move_toward()` with species speed, latent-modulated pace, delta-scaled step
+4. **Gravity well** — gentle pull toward `ref_position`: `nudge = 0.05 × sync_speed × delta`, skipped when distance < 0.2
+
+**Wander target persistence:** Tracks `has_target`, `target_x`, `target_z`, `last_action_type` per entity. When wandering, reuses an existing target until reached (distance < 0.5), then picks a new one. Prevents the "jitter in place" bug where a new random target was generated every frame.
+
+**Interaction triggers:** When an entity arrives at its target (within `ARRIVAL_DISTANCE = 0.8`), fires a client event (consumption, predation, pollination, repro) with a 2-second per-target cooldown. Events are queued by HeartbeatSender.
+
+### Reconciliation (`scripts/reconciliation.gd`)
+
+Called once per server tick (after tick packet processing). For each mobile entity:
+
+1. **Stagger check:** `ticks_since_last < sync_phase` → skip (spreads sync across frames)
+2. **Ack handling:** if server acknowledged, clear queue and update `last_reconciled_tick`
+3. **Divergence check:** if `divergence < 0.1`, prune queue and update tick
+4. **Enqueue:** append `ref_position` as reconcile target (cap at 2)
+5. **Prune:** keep only the latest target if queue overflows
+
+The agency system consumes reconcile targets at 60 Hz via `_execute_reconcile()`, which moves the entity toward its queued target using a spiral-meander pattern. When the entity arrives (distance < 0.8), the reconcile index advances and the entity returns to normal agency.
+
+### Heartbeat Sender (`scripts/heartbeat.gd`)
+
+Accumulates entity positions and agency events, sends at 1 Hz interval. Builds a `positions` dict keyed by entity ID with `[x, 0.0, z]` values for all alive mobile consumers. Queued events are drained on send.
+
+### Rendering (`scenes/main.gd`)
+
+**Ground mesh:** Rebuilt every frame via `SurfaceTool` with `PRIMITIVE_TRIANGLES`. Each grid cell becomes two triangles colored by moisture: sandy (dry < 0.33) → green (0.33–0.66) → teal (moist > 0.66). Cells are 0.98×0.98 to avoid z-fighting seams.
+
+**Entity mesh:** `MultiMeshInstance3D` with `BoxMesh` primitive. Entity size scales by type (TREE=3.0, ANIMAL=1.5, BIRD=1.0, INSECT=0.7, PLANT=0.8). Color from species or type lookup. Insects have a vertical bob (sin wave + sync_phase offset). Dormant entities are darkened 50%.
+
+**Particle mesh:** `MultiMeshInstance3D` with small `BoxMesh` (0.4³). Cap 500 particles. Spawned on death, consumption, and pollination events from server tick packets. Particles expand outward with damping (0.95×) and fade over 0.5–1.5s.
+
+### Orbit Camera (`scripts/camera/orbit_camera.gd`)
+
+Spherical coordinate orbit around a world-space target point.
+
+**Controls:**
+- Left mouse drag — orbit (theta/phi angles)
+- Right mouse drag — pan target (perpendicular to view direction)
+- Scroll wheel — zoom (distance ×/÷ 1.15 per tick, clamped 5–200)
+
+**Parameters (exported for editor tuning):**
+- `target` — world-space orbit center (set to grid center on init)
+- `distance` — 45.0 default
+- `theta` — horizontal angle, π/4 default
+- `phi` — vertical angle, π/3 default (clamped 0.05 to π-0.05)
+- `zoom_factor` — 1.15 per scroll tick
+- `pan_speed` — 0.03 world units per pixel
+- `orbit_speed` — 0.003 radians per pixel
+
+### Constants (`scripts/constants.gd`)
+
+Mirrors browser `constants.js` and Python `constants.py`:
+
+- `GRID_SIZE = 32` — world dimensions
+- `SERVER_TICK_RATE = 2.0` — 0.5 Hz intent packets
+- `HEARTBEAT_INTERVAL_MS = 1000` — 1 Hz client heartbeats
+- `RECONCILE_MIN_DIVERGENCE = 0.1` — skip sync below this
+- `RECONCILE_QUEUE_MAX = 2` — cap reconcile targets
+- `GRAVITY_WELL_FACTOR = 0.05` — gentle pull strength
+- `INTERACTION_COOLDOWN = 2.0` — seconds between re-interactions
+- `WANDER_MARGIN = 4.0` — wander target range
+- `ARRIVAL_DISTANCE = 0.8` — distance threshold for target arrival
+- Color dictionaries: `TYPE_COLORS`, `SPECIES_COLORS`, `STATE_COLORS`
+- `MOBILE_TYPES = ["ANIMAL", "BIRD", "INSECT"]`
+- Particle colors: `PARTICLE_CONSUMPTION`, `PARTICLE_POLLINATION`, `PARTICLE_DEATH`
+
+### Telemetry Logging
+
+Every 10 ticks, the client prints a debug line with entity position divergence stats:
+```
+[telemetry] tick=30 entities=29 | deer_01: local=(6.84,19.22) ref=(6.87,19.16) div=0.065 ack=true queue=0 | ...
+```
+This mirrors the server's telemetry bus format for cross-referencing client vs. server state during debugging.
+
+### Sync Bugs Fixed (PR: `fix/godot-client-sync`)
+
+Three critical bugs were identified by comparing Godot agency/reconciliation against the browser and Python clients:
+
+1. **Gravity well missing `delta`** — nudge was applied at full strength every frame (60× too strong), causing violent overshoot/oscillation around ref_position. Fixed: `nudge = 0.05 × sync_speed × delta`, with 0.2 proximity threshold.
+
+2. **Wander target regenerated every frame** — `_evaluate_wandering()` picked a new random target each frame, causing jitter as the entity chased a moving target. Combined with the facing_angle bias from `randf() * TAU * wobble + ent.facing_angle`, this also caused a slow "marching" drift. Fixed: track `has_target`/`last_action_type` to persist wander targets until reached.
+
+3. **Reconciliation missing `last_reconciled_tick`** — used `(tick % 4) == sync_phase` instead of tracking ticks since last reconcile. No queue pruning, no update on negligible divergence. Fixed: added `last_reconciled_tick` tracking, queue pruning, and proper stagger logic to match Python/browser.
+
+### Current Limitations
+
+- **No skeletal animation** — entities render as colored BoxMesh cubes sized by type. The motion latent is consumed by the agency system for movement modulation but not yet mapped to bone transforms.
+- **No skeletal rigs** — Blender models and Godot skeletons are not yet integrated (deferred to full Milestone 4).
+- **Ground mesh rebuilt every frame** — `SurfaceTool` commit is O(grid²) per frame. For 32×32 this is fine (~1000 triangles). Future: commit once, update via vertex buffer or shader.
+- **No water source rendering** — water sources are tracked in the world model but not yet rendered in 3D.
+- **`gl_compatibility` renderer** — chosen for broad hardware support. Forward+ or Vulkan would allow more sophisticated materials, PBR, and shadows.
+- **No replay** — the Godot client connects live only. No JSONL replay mode like the Python client.
+
+---
+
 ## Pending — Milestone 4: Godot Client + Trained Motion Model
 
 **Goal:** 3D visualization of trait-based ecosystems with latent-driven skeletal animation. Built against the stable trait-based engine from Milestone 2, not the current hand-coded species.
