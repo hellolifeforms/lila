@@ -1,15 +1,14 @@
 ## Main scene - 3D world view with orbit camera.
 ## Grid coordinates map 1:1 to world X/Z; Y is height.
-## Uses primitive-based InstancedMesh rendering per entity type.
+## Uses simple cube-based InstancedMesh rendering per entity type.
 extends Node3D
 
 
 @onready var camera: Camera3D = $Camera
 @onready var renderer: Node = $Renderer
-@onready var ground_mi: MeshInstance3D = $Ground
+@onready var ground_mi: MultiMeshInstance3D = $Ground
 @onready var entity_parent: Node3D = $Entities
 @onready var particle_instance: MultiMeshInstance3D = $Particles
-@onready var water_parent: Node3D = $WaterSources
 @onready var hud: CanvasLayer = $HUD
 @onready var stats_label: Label = $HUD/VBox/StatsLabel
 @onready var event_log: RichTextLabel = $HUD/VBox/EventLog
@@ -30,12 +29,11 @@ var _fps_timer: float = 0.0
 
 # Renderer state
 var _type_meshes: Dictionary = {}
-var _water_shader_mat: Object = null
-var _water_instances: Dictionary = {}
+var _ground_mat: ShaderMaterial = null
 
 
 func _ready() -> void:
-	print("Lila Godot Client starting (3D — primitive renderer)...")
+	print("Lila Godot Client starting (3D — cube renderer)...")
 
 	WS.session_started.connect(_on_session_started)
 	WS.tick_packet.connect(_on_tick_packet)
@@ -43,6 +41,7 @@ func _ready() -> void:
 	rain_button.pressed.connect(_on_rain_pressed)
 
 	_particles = load("res://scripts/particles.gd").new()
+
 	_setup_particles()
 	_setup_renderer()
 
@@ -64,11 +63,9 @@ func _setup_renderer() -> void:
 	# Create InstancedMesh nodes under Entities parent
 	_type_meshes = renderer.setup_type_meshes(entity_parent, meshes)
 
-	# Water material — semi-transparent blue pool
-	_water_shader_mat = StandardMaterial3D.new()
-	_water_shader_mat.albedo_color = Color(0.22, 0.42, 0.53, 0.6)
-	_water_shader_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_water_shader_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	# Ground voxels — reads INSTANCE_CUSTOM for per-cell color
+	_ground_mat = renderer.make_ground_material()
+	ground_mi.material_override = _ground_mat
 
 
 # ── Particle MultiMesh setup ──────────────────────────────────────────
@@ -80,9 +77,12 @@ func _setup_particles() -> void:
 	var mm: MultiMesh = MultiMesh.new()
 	mm.mesh = box
 	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
+	mm.use_custom_data = true
 	mm.instance_count = 500
 	particle_instance.multimesh = mm
+
+	# Particles need a material that reads INSTANCE_CUSTOM for per-instance colors.
+	particle_instance.material_override = renderer.make_particle_material()
 
 
 func _update_particle_mesh() -> void:
@@ -102,7 +102,7 @@ func _update_particle_mesh() -> void:
 		mm.set_instance_transform(i, t)
 		var c: Color = p.color
 		c.a = maxf(0.0, p.life / p.max_life)
-		mm.set_instance_color(i, c)
+		mm.set_instance_custom_data(i, c)
 
 
 # ── Main loop ─────────────────────────────────────────────────────────
@@ -128,31 +128,20 @@ func _process(delta: float) -> void:
 		# Rebuild meshes every frame
 		_build_ground()
 		_build_entities()
-		_build_water()
 		_update_particle_mesh()
 
 
-## Build ground tiles as ArrayMesh via SurfaceTool.
+## Build ground as MultiMesh voxels (one 1x1x1 cube per grid cell).
+## Water sources color cells within their radius.
 func _build_ground() -> void:
-	var mesh: Mesh = renderer.build_ground_mesh(World.moisture_grid)
-	ground_mi.mesh = mesh
+	var mm: MultiMesh = renderer.build_ground_voxels(World.moisture_grid, World.water_sources)
+	ground_mi.multimesh = mm
 
 
 ## Update all per-type InstancedMesh entities.
 func _build_entities() -> void:
 	var entities: Array = World.get_alive()
 	renderer.update_entities(_type_meshes, entities)
-
-
-## Build / update water source meshes.
-func _build_water() -> void:
-	# Pulse water alpha slightly over time
-	var t: float = sin(Time.get_ticks_msec() / 1000.0) * 0.05
-	_water_shader_mat.albedo_color.a = clampf(0.55 + t, 0.3, 0.8)
-
-	_water_instances = renderer.update_water_sources(
-		water_parent, World, _water_shader_mat
-	)
 
 
 # ── Input ─────────────────────────────────────────────────────────────

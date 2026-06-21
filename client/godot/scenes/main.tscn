@@ -7,8 +7,17 @@
 [sub_resource type="Environment" id="env1"]
 background_mode = 1
 background_color = Color(0.059, 0.063, 0.059, 1)
-glow/intensity = 0.25
-ambient/light_energy_scale = 0.6
+ambient_light_source = 1
+ambient_light_color = Color(0.25, 0.25, 0.3, 1)
+ambient_light_energy = 0.5
+tonemap_mode = 3
+tonemap_white = 6.0
+glow_enabled = true
+glow_intensity = 0.3
+glow_bloom = 0.1
+fog_enabled = true
+fog_light_color = Color(0.15, 0.18, 0.15, 1)
+fog_density = 0.005
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1")
@@ -17,28 +26,25 @@ script = ExtResource("1")
 script = ExtResource("2")
 fov = 50.0
 
-[node name="WorldLight" type="DirectionalLight3D" parent="."]
-transform = Transform3D(0.707107, 0, 0.707107, 0, 1, 0, -0.707107, 0, 0.707107, 10, 15, 10)
+[node name="SunLight" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866, -0.354, 0.354, 0, 0.707, 0.707, -0.5, -0.612, 0.612, 16, 40, 16)
 shadow_enabled = true
-color = Color(1, 0.95, 0.88, 1)
-energy = 1.8
-shadow/bias = 0.001
-shadow/normal_bias = 0.5
+light_color = Color(1, 0.97, 0.9, 1)
+light_energy = 1.2
+directional_shadow_mode = 2
 
-[node name="AmbientLight" type="OmniLight3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 8, 16)
-color = Color(0.45, 0.5, 0.6, 1)
-energy = 2.0
-omni_range = 60.0
+[node name="FillLight" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-0.866, 0.25, -0.433, 0, 0.866, 0.5, 0.5, 0.433, -0.75, 16, 10, 16)
+light_color = Color(0.7, 0.8, 1.0, 1)
+light_energy = 0.3
+shadow_enabled = false
 
 [node name="Renderer" type="Node" parent="."]
 script = ExtResource("3")
 
-[node name="Ground" type="MeshInstance3D" parent="."]
+[node name="Ground" type="MultiMeshInstance3D" parent="."]
 cast_shadow = 0
 layers = 1
-
-[node name="WaterSources" type="Node3D" parent="."]
 
 [node name="Entities" type="Node3D" parent="."]
 
