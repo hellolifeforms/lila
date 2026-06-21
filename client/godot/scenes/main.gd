@@ -66,6 +66,9 @@ func _setup_renderer() -> void:
 	# Ground voxels — reads INSTANCE_CUSTOM for per-cell color
 	_ground_mat = renderer.make_ground_material()
 	ground_mi.material_override = _ground_mat
+	# Build voxel MultiMesh once — transforms are static, only colors change
+	var ground_mm: MultiMesh = renderer.build_ground_voxels()
+	ground_mi.multimesh = ground_mm
 
 
 # ── Particle MultiMesh setup ──────────────────────────────────────────
@@ -131,11 +134,11 @@ func _process(delta: float) -> void:
 		_update_particle_mesh()
 
 
-## Build ground as MultiMesh voxels (one 1x1x1 cube per grid cell).
-## Water sources color cells within their radius.
+## Update ground voxel colors (MultiMesh was built once in setup).
 func _build_ground() -> void:
-	var mm: MultiMesh = renderer.build_ground_voxels(World.moisture_grid, World.water_sources)
-	ground_mi.multimesh = mm
+	renderer.update_ground_voxels(
+		ground_mi.multimesh, World.moisture_grid, World.water_sources
+	)
 
 
 ## Update all per-type InstancedMesh entities.

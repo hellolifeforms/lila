@@ -185,13 +185,9 @@ static func update_entities(
 
 
 
-## Build ground as MultiMesh of 1x1x1 BoxMesh voxels (one per grid cell).
-## Each voxel sits at (gx, 0, gz) with top face at y=0.5.
-## Cells inside a water source get water color blended by water_level.
-static func build_ground_voxels(
-	moisture_grid: PackedFloat32Array,
-	water_sources: Array,
-) -> MultiMesh:
+## Build ground voxel MultiMesh once (call in _setup).
+## Creates 1x1x1 BoxMesh instances at each grid cell — transforms never change.
+static func build_ground_voxels() -> MultiMesh:
 	var box: BoxMesh = BoxMesh.new()
 	box.size = Vector3(1.0, 1.0, 1.0)
 
@@ -206,12 +202,33 @@ static func build_ground_voxels(
 	var i: int = 0
 	for gz in size:
 		for gx in size:
+			var t: Transform3D
+			t.origin = Vector3(float(gx), 0.0, float(gz))
+			t.basis = Basis.IDENTITY
+			mm.set_instance_transform(i, t)
+			mm.set_instance_custom_data(i, C_MOISTURE_MID)
+			i += 1
+
+	return mm
+
+
+## Update ground voxel colors from moisture grid + water sources.
+## Call every frame — only touches color data, transforms are static.
+static func update_ground_voxels(
+	mm: MultiMesh,
+	moisture_grid: PackedFloat32Array,
+	water_sources: Array,
+) -> void:
+	var size: int = LilaConstants.GRID_SIZE
+
+	var i: int = 0
+	for gz in size:
+		for gx in size:
 			var idx: int = gx + gz * size
 			var moisture: float = 0.5
 			if idx < moisture_grid.size():
 				moisture = moisture_grid[idx]
 
-			# Check if this cell falls inside any water source
 			var color: Color = _moisture_color(moisture)
 			var cell_pos: Vector2 = Vector2(float(gx), float(gz))
 			for src: Dictionary in water_sources:
@@ -222,20 +239,12 @@ static func build_ground_voxels(
 					continue
 				var dist: float = cell_pos.distance_to(src_pos)
 				if dist <= radius:
-					# Blend toward water color; closer = more water
 					var blend: float = (1.0 - dist / radius) * level
 					color = color.lerp(C_WATER, blend)
-					break  # first (closest) match wins; sources rarely overlap
+					break
 
-			var t: Transform3D
-			t.origin = Vector3(float(gx), 0.0, float(gz))
-			t.basis = Basis.IDENTITY
-
-			mm.set_instance_transform(i, t)
 			mm.set_instance_custom_data(i, color)
 			i += 1
-
-	return mm
 
 
 ## Build particle mesh (small spheres/boxes).

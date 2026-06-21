@@ -10,7 +10,9 @@ signal session_started(data: Dictionary)
 signal tick_packet(data: Dictionary)
 signal world_json_ready(data: Dictionary)
 
-var _world_def_to_send: Dictionary = {}
+
+## Persisted world definition string (resent on every reconnect).
+var _world_def_json: String = ""
 
 
 ## State
@@ -29,6 +31,7 @@ var port: int = LilaConstants.DEFAULT_PORT
 func _ready() -> void:
 	_ws = WebSocketPeer.new()
 	_load_world_json_local()
+	_setup_poll_timer()
 
 
 ## Load world.json from local resources (avoids HTTP issues with websockets server).
@@ -39,58 +42,72 @@ func _load_world_json_local() -> void:
 		return
 	var text: String = file.get_as_text()
 	file.close()
+	_world_def_json = text.strip_edges()
 
 	var json_conv: JSON = JSON.new()
 	var err: Error = json_conv.parse(text)
 	if err == OK:
-		var data: Dictionary = json_conv.data
-		_world_def_to_send = data
-		world_json_ready.emit(data)
+		world_json_ready.emit(json_conv.data)
 		print("World JSON loaded from local file")
 	else:
 		push_error("Failed to parse world.json: ", json_conv.get_error_message())
 
 
-func _process(delta: float) -> void:
-	if not _is_connected:
-		_reconnect_timer -= delta
-		if _reconnect_timer <= 0 and not _is_connecting:
-			_connect_to_server()
+## Dedicated poll timer ensures WebSocket I/O is serviced even when
+## the render loop stalls (e.g. heavy voxel rebuild frames).
+## Server pings every 20s with 10s timeout, so 100ms polling is safe.
+var _poll_timer: Timer
+func _setup_poll_timer() -> void:
+	_poll_timer = Timer.new()
+	_poll_timer.wait_time = 0.1
+	_poll_timer.one_shot = false
+	_poll_timer.timeout.connect(_on_poll_timer)
+	add_child(_poll_timer)
+	_poll_timer.start()
+
+func _on_poll_timer() -> void:
+	if _ws == null:
 		return
-
-	# Poll WebSocket
 	_ws.poll()
-
 	var status: int = _ws.get_ready_state()
 
-	if status == WebSocketPeer.STATE_OPEN:
+	if status == WebSocketPeer.STATE_OPEN and _is_connected:
 		# Read incoming messages
 		while _ws.get_available_packet_count() > 0:
 			var packet: PackedByteArray = _ws.get_packet()
 			var text: String = packet.get_string_from_utf8()
 			_dispatch(text)
-
 		# Flush pending sends
 		while _pending_sends.size() > 0:
 			var msg: String = _pending_sends.pop_front()
 			var err: Error = _ws.send_text(msg)
 			if err != OK:
 				push_error("WebSocket send failed: ", err)
-			# Only send one large message per frame to avoid flooding
 			break
-
 	elif status == WebSocketPeer.STATE_CLOSED:
-		var code: int = _ws.get_close_code()
-		_is_connected = false
-		_reconnect_timer = LilaConstants.RECONNECT_DELAY
-		disconnected.emit()
-		print("WebSocket closed (code ", code, "), reconnecting in ", LilaConstants.RECONNECT_DELAY, "s")
+		if _is_connected:
+			var code: int = _ws.get_close_code()
+			_is_connected = false
+			_reconnect_timer = LilaConstants.RECONNECT_DELAY
+			disconnected.emit()
+			print("WebSocket closed (code ", code, "), reconnecting in ", LilaConstants.RECONNECT_DELAY, "s")
+
+
+func _process(delta: float) -> void:
+	if not _is_connected and not _is_connecting:
+		_reconnect_timer -= delta
+		if _reconnect_timer <= 0:
+			_connect_to_server()
 
 
 func _connect_to_server() -> void:
 	_is_connecting = true
 	var url: String = "ws://" + host + ":" + str(port) + "/ws"
 	print("Connecting to ", url)
+
+	# Fresh WebSocketPeer to avoid stale state from previous connection
+	_ws = WebSocketPeer.new()
+
 	var err: Error = _ws.connect_to_url(url)
 	if err != OK:
 		push_error("Failed to connect to WebSocket: ", err)
@@ -111,11 +128,10 @@ func _connect_to_server() -> void:
 		connected.emit()
 		print("WebSocket connected")
 
-		# Send world definition if we have it
-		if not _world_def_to_send.is_empty():
-			_ws.send_text(JSON.stringify(_world_def_to_send))
+		# Send world definition (always — works on reconnect)
+		if not _world_def_json.is_empty():
+			_ws.send_text(_world_def_json)
 			print("World definition sent")
-			_world_def_to_send = {}
 
 		# Flush any pending sends from before connection
 		for msg in _pending_sends:
