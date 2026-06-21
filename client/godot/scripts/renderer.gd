@@ -1,7 +1,6 @@
 ## Simple cube-based 3D entity renderer.
 ## Each entity type gets a single BoxMesh (cube) with type-appropriate color
 ## harmonized with the browser renderer palette.
-class_name Renderer
 extends Node
 
 
@@ -46,21 +45,28 @@ var _type_meshes: Dictionary = {}
 
 ## Build simple BoxMesh cubes for all entity types (call once in _ready).
 ## Fruiting wildflowers get a SphereMesh instead of a cube.
-static func build_all_type_meshes() -> Dictionary:
+func build_all_type_meshes() -> Dictionary:
 	var meshes: Dictionary = {}
-	for key in ["TREE", "ANIMAL", "BIRD", "INSECT", "PLANT_GRASS", "PLANT_FLOWER", "MICROORGANISM"]:
+	for key in ["TREE", "ANIMAL", "INSECT", "PLANT_GRASS", "PLANT_FLOWER", "MICROORGANISM"]:
 		meshes[key] = BoxMesh.new()
+	# Birds are cones — pointy end faces forward
+	# ConeMesh removed in Godot 4, use CylinderMesh with top_radius = 0
+	var cone: CylinderMesh = CylinderMesh.new()
+	cone.bottom_radius = 1.0
+	cone.top_radius = 0.0
+	cone.height = 2.0
+	cone.radial_segments = 12
+	meshes["BIRD"] = cone
 	var sphere: SphereMesh = SphereMesh.new()
 	sphere.radius = 1.0
 	sphere.radial_segments = 12
-	sphere.rings = 8
 	meshes["PLANT_FLOWER_BLOOM"] = sphere
 	return meshes
 
 
 ## Shader material that reads per-instance custom data as color.
 ## Uses INSTANCE_CUSTOM instead of INSTANCE_COLOR (broken in Godot 4.7).
-static func _make_vertex_color_material() -> ShaderMaterial:
+func _make_vertex_color_material() -> ShaderMaterial:
 	var shader: Shader = Shader.new()
 	shader.code = """
 shader_type spatial;
@@ -83,7 +89,7 @@ void fragment() {
 
 
 ## Material for ground voxels: reads INSTANCE_CUSTOM for per-cell color.
-static func make_ground_material() -> ShaderMaterial:
+func make_ground_material() -> ShaderMaterial:
 	var shader: Shader = Shader.new()
 	shader.code = """
 shader_type spatial;
@@ -104,7 +110,7 @@ void fragment() {
 
 
 ## Material for particle MultiMesh: reads INSTANCE_CUSTOM, unshaded for glow effect.
-static func make_particle_material() -> ShaderMaterial:
+func make_particle_material() -> ShaderMaterial:
 	var shader: Shader = Shader.new()
 	shader.code = """
 shader_type spatial;
@@ -126,7 +132,7 @@ void fragment() {
 
 ## Set up MultiMeshInstance3D nodes inside a parent Node3D.
 ## Returns map type → MultiMeshInstance3D.
-static func setup_type_meshes(parent: Node3D, meshes: Dictionary) -> Dictionary:
+func setup_type_meshes(parent: Node3D, meshes: Dictionary) -> Dictionary:
 	var result: Dictionary = {}
 	for type_name: String in meshes:
 		var mi: Node3D = MultiMeshInstance3D.new()
@@ -148,7 +154,7 @@ static func setup_type_meshes(parent: Node3D, meshes: Dictionary) -> Dictionary:
 
 ## Update all MultiMeshInstance3D instances for the current entity set.
 ## Sorts entities by type, then populates transforms + colors.
-static func update_entities(
+func update_entities(
 	type_meshes: Dictionary,
 	entities: Array,
 	face_dir: bool = true,
@@ -201,7 +207,7 @@ static func update_entities(
 
 ## Build ground voxel MultiMesh once (call in _setup).
 ## Creates 1x1x1 BoxMesh instances at each grid cell — transforms never change.
-static func build_ground_voxels() -> MultiMesh:
+func build_ground_voxels() -> MultiMesh:
 	var box: BoxMesh = BoxMesh.new()
 	box.size = Vector3(1.0, 1.0, 1.0)
 
@@ -228,7 +234,7 @@ static func build_ground_voxels() -> MultiMesh:
 
 ## Update ground voxel colors from moisture grid + water sources.
 ## Call every frame — only touches color data, transforms are static.
-static func update_ground_voxels(
+func update_ground_voxels(
 	mm: MultiMesh,
 	moisture_grid: PackedFloat32Array,
 	water_sources: Array,
@@ -262,7 +268,7 @@ static func update_ground_voxels(
 
 
 ## Build particle mesh (small spheres/boxes).
-static func build_particle_mesh() -> Mesh:
+func build_particle_mesh() -> Mesh:
 	var box: BoxMesh = BoxMesh.new()
 	box.size = Vector3(0.3, 0.3, 0.3)
 	return box
@@ -271,7 +277,7 @@ static func build_particle_mesh() -> Mesh:
 
 # ── Color helpers ────────────────────────────────────────────────────────
 
-static func _moisture_color(moisture: float) -> Color:
+func _moisture_color(moisture: float) -> Color:
 	if moisture < 0.33:
 		return C_MOISTURE_DRY
 	elif moisture < 0.66:
@@ -280,7 +286,7 @@ static func _moisture_color(moisture: float) -> Color:
 		return C_MOISTURE_WET
 
 
-static func _get_entity_color(ent) -> Color:
+func _get_entity_color(ent) -> Color:
 	var species: String = ent.species
 	match ent.type:
 		"ANIMAL":
@@ -302,7 +308,7 @@ static func _get_entity_color(ent) -> Color:
 	return Color(0.5, 0.5, 0.5)
 
 
-static func _get_entity_size(ent) -> float:
+func _get_entity_size(ent) -> float:
 	match ent.type:
 		"TREE":
 			return SIZE_TREE
@@ -313,16 +319,16 @@ static func _get_entity_size(ent) -> float:
 		"INSECT":
 			return SIZE_INSECT
 		"PLANT":
-			# Fruiting wildflowers are twice as big (sphere variant)
+			# Fruiting wildflowers are slightly bigger (sphere variant)
 			if ent.species == "wildflower" and ent.state == "FRUITING":
-				return SIZE_PLANT * 2.0
+				return SIZE_PLANT * 1.3
 			return SIZE_PLANT
 		"MICROORGANISM":
 			return SIZE_MICRO
 	return 1.0
 
 
-static func _entity_to_mesh_key(ent) -> String:
+func _entity_to_mesh_key(ent) -> String:
 	match ent.type:
 		"TREE":
 			return "TREE"
@@ -343,7 +349,7 @@ static func _entity_to_mesh_key(ent) -> String:
 	return ""
 
 
-static func _build_entity_transform(ent, size: float, tick_ms: float) -> Transform3D:
+func _build_entity_transform(ent, size: float, tick_ms: float) -> Transform3D:
 	var cx: float = ent.x
 	var cz: float = ent.z
 	var y_extra: float = 0.0
@@ -376,7 +382,7 @@ static func _build_entity_transform(ent, size: float, tick_ms: float) -> Transfo
 	# ── Height placement ───────────────────────────────────────────
 	# Flying entities keep their own altitude
 	if ent.type == "INSECT":
-		y_extra = 2.5 + sin(tick_ms / 300.0 + float(ent.sync_phase)) * 0.8
+		y_extra = 1.25 + sin(tick_ms / 300.0 + float(ent.sync_phase)) * 0.4
 	elif ent.type == "BIRD":
 		y_extra = 3.5 + sin(tick_ms / 400.0 + float(ent.sync_phase)) * 0.5
 
@@ -394,9 +400,20 @@ static func _build_entity_transform(ent, size: float, tick_ms: float) -> Transfo
 	var t: Transform3D
 	t.origin = Vector3(cx, cy, cz)
 
-	# Rotate around Y axis to face direction, scale uniformly
-	var rot: Basis = Basis.from_euler(Vector3(0.0, -angle + PI / 2.0, 0.0))
-	t.basis = rot * Basis.from_scale(Vector3(sc, sc, sc))
+	# Rotate around Y axis to face direction
+	var rot: Basis
+	if ent.type == "BIRD":
+		# Tilt cone forward (points along +X) then steer around Y
+		rot = Basis.from_euler(Vector3(PI / 2.0, -angle + PI / 2.0, 0.0))
+	else:
+		rot = Basis.from_euler(Vector3(0.0, -angle + PI / 2.0, 0.0))
+	# Insects are squished vertically to look more like flat flyers
+	var scale: Vector3
+	if ent.type == "INSECT":
+		scale = Vector3(sc, sc / 5.0, sc)
+	else:
+		scale = Vector3(sc, sc, sc)
+	t.basis = rot * Basis.from_scale(scale)
 
 	return t
 
