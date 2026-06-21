@@ -54,7 +54,6 @@ func build_all_type_meshes() -> Dictionary:
 	var capsule: CapsuleMesh = CapsuleMesh.new()
 	capsule.radius = 1.0
 	capsule.height = 2.5
-	capsule.ring_count = 12
 	meshes["ANIMAL"] = capsule
 	# Birds are cones — pointy end faces forward
 	# ConeMesh removed in Godot 4, use CylinderMesh with top_radius = 0
