@@ -8,6 +8,10 @@ extends Node
 # ── Color palette (mirrored from browser constants.js) ─────────────────
 
 const C_BG: Color = Color(0.059, 0.063, 0.059)
+
+## Top of ground voxels (1x1x1 BoxMesh centered at y=0.0 → surface at y=0.5)
+const GROUND_SURFACE_Y: float = 0.5
+
 const C_DEER: Color = Color(0.769, 0.584, 0.416)
 const C_WOLF: Color = Color(0.45, 0.45, 0.45)
 const C_BIRD: Color = Color(0.541, 0.482, 0.420)
@@ -17,6 +21,7 @@ const C_GRASS: Color = Color(0.420, 0.561, 0.369)
 const C_GRASS_WILT: Color = Color(0.478, 0.447, 0.329)
 const C_WILDFLOWER: Color = Color(0.478, 0.561, 0.369)
 const C_MUSHROOM: Color = Color(0.627, 0.549, 0.471)
+const C_FRUITING: Color = Color(0.95, 0.85, 0.12)
 
 const C_MOISTURE_DRY: Color = Color(0.400, 0.345, 0.235)
 const C_MOISTURE_MID: Color = Color(0.263, 0.275, 0.235)
@@ -40,10 +45,16 @@ var _type_meshes: Dictionary = {}
 # ── Public API ─────────────────────────────────────────────────────────
 
 ## Build simple BoxMesh cubes for all entity types (call once in _ready).
+## Fruiting wildflowers get a SphereMesh instead of a cube.
 static func build_all_type_meshes() -> Dictionary:
 	var meshes: Dictionary = {}
 	for key in ["TREE", "ANIMAL", "BIRD", "INSECT", "PLANT_GRASS", "PLANT_FLOWER", "MICROORGANISM"]:
 		meshes[key] = BoxMesh.new()
+	var sphere: SphereMesh = SphereMesh.new()
+	sphere.radius = 1.0
+	sphere.radial_segments = 12
+	sphere.rings = 8
+	meshes["PLANT_FLOWER_BLOOM"] = sphere
 	return meshes
 
 
@@ -176,9 +187,12 @@ static func update_entities(
 				color = color.darkened(0.55)
 
 			# Wilted plants shift color
-			var sv: Dictionary = ent.drive
-			if ent.type == "PLANT" and sv.get("hydration", 1.0) < 0.25:
+			if ent.type == "PLANT" and ent.drive.get("hydration", 1.0) < 0.25:
 				color = C_GRASS_WILT
+
+			# Fruiting plants turn bright red (only flowers bloom, not grass)
+			if ent.type == "PLANT" and ent.state == "FRUITING" and ent.species == "wildflower":
+				color = C_FRUITING
 
 			mm.set_instance_transform(i, transform)
 			mm.set_instance_custom_data(i, color)
@@ -299,6 +313,9 @@ static func _get_entity_size(ent) -> float:
 		"INSECT":
 			return SIZE_INSECT
 		"PLANT":
+			# Fruiting wildflowers are twice as big (sphere variant)
+			if ent.species == "wildflower" and ent.state == "FRUITING":
+				return SIZE_PLANT * 2.0
 			return SIZE_PLANT
 		"MICROORGANISM":
 			return SIZE_MICRO
@@ -316,6 +333,8 @@ static func _entity_to_mesh_key(ent) -> String:
 		"INSECT":
 			return "INSECT"
 		"PLANT":
+			if ent.species == "wildflower" and ent.state == "FRUITING":
+				return "PLANT_FLOWER_BLOOM"
 			if ent.species == "wildflower":
 				return "PLANT_FLOWER"
 			return "PLANT_GRASS"
@@ -327,28 +346,18 @@ static func _entity_to_mesh_key(ent) -> String:
 static func _build_entity_transform(ent, size: float, tick_ms: float) -> Transform3D:
 	var cx: float = ent.x
 	var cz: float = ent.z
-	var cy: float = 0.5
 	var y_extra: float = 0.0
+	var sv: Dictionary = ent.drive
 
-	# Insects float above ground
-	if ent.type == "INSECT":
-		y_extra = 2.5 + sin(tick_ms / 300.0 + float(ent.sync_phase)) * 0.8
-		cy += y_extra
-
-	# Birds fly higher
-	if ent.type == "BIRD":
-		y_extra = 3.5 + sin(tick_ms / 400.0 + float(ent.sync_phase)) * 0.5
-		cy += y_extra
+	# ── Per-type size adjustments ──────────────────────────────────
 
 	# Trees grow taller with growth state_var
-	var sv: Dictionary = ent.drive
 	if ent.type == "TREE":
 		var growth: float = sv.get("growth", 0.5)
-		cy = 0.0  # trunk rooted at ground
-		size = SIZE_TREE * (0.5 + growth * 0.5)  # scale by growth
+		size = SIZE_TREE * (0.5 + growth * 0.5)
 
-	# Plants scale by growth
-	if ent.type == "PLANT":
+	# Plants scale by growth (skip for fruiting wildflowers — sized in _get_entity_size)
+	if ent.type == "PLANT" and not (ent.species == "wildflower" and ent.state == "FRUITING"):
 		var growth: float = sv.get("growth", 0.3)
 		size = SIZE_PLANT * (0.3 + growth * 0.7)
 
@@ -361,16 +370,32 @@ static func _build_entity_transform(ent, size: float, tick_ms: float) -> Transfo
 	if ent.type == "ANIMAL" and ent.state == "RESTING":
 		size *= 0.75
 
-	# Facing direction
+	# ── Compute scaled size (world units) ──────────────────────────
+	var sc: float = size * 0.6
+
+	# ── Height placement ───────────────────────────────────────────
+	# Flying entities keep their own altitude
+	if ent.type == "INSECT":
+		y_extra = 2.5 + sin(tick_ms / 300.0 + float(ent.sync_phase)) * 0.8
+	elif ent.type == "BIRD":
+		y_extra = 3.5 + sin(tick_ms / 400.0 + float(ent.sync_phase)) * 0.5
+
+	# Ground entities rest on top of ground voxels (y = GROUND_SURFACE_Y)
+	var cy: float
+	if ent.type == "INSECT" or ent.type == "BIRD":
+		cy = GROUND_SURFACE_Y + y_extra
+	else:
+		# Center Y = ground surface + half the cube height
+		cy = GROUND_SURFACE_Y + sc / 2.0
+
+	# ── Build transform ────────────────────────────────────────────
 	var angle: float = ent.facing_angle
 
-	# Build transform
 	var t: Transform3D
 	t.origin = Vector3(cx, cy, cz)
 
 	# Rotate around Y axis to face direction, scale uniformly
 	var rot: Basis = Basis.from_euler(Vector3(0.0, -angle + PI / 2.0, 0.0))
-	var sc: float = size * 0.6  # normalize to world units
 	t.basis = rot * Basis.from_scale(Vector3(sc, sc, sc))
 
 	return t
