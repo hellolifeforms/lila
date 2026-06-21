@@ -73,6 +73,13 @@ class FleeActor:
     def resolve(self, ctx: Any) -> list[Effect]:
         """Evaluate flee conditions and return effects.
 
+        Only emits effects on state entry (transition to FLEEING). Once the
+        entity is already FLEEING, the guard actor handles exit — it
+        transitions back to IDLE when _target is cleared on arrival.
+        This prevents the FleeActor from continuously resetting the escape
+        target every tick, which would keep _target non-None forever and
+        trap the entity in FLEEING indefinitely.
+
         Args:
             ctx: InteractionContext with entity, params, nearby_entities, etc.
 
@@ -84,6 +91,12 @@ class FleeActor:
 
         p = ctx.params
         if p.speed <= 0:
+            return []
+
+        # Skip if already fleeing — let the guard actor handle exit.
+        # The entity will transition to IDLE once it reaches its escape target
+        # (_target is cleared by movement system on arrival).
+        if ctx.entity["state"] == "FLEEING":
             return []
 
         # Get flee targets from compiled ecology
@@ -100,7 +113,6 @@ class FleeActor:
                         ctx.entity["position"], other["position"]
                     )
 
-                    old_state = ctx.entity["state"]
                     effects: list[Effect] = [
                         StateTransition(
                             entity_id=ctx.entity["id"],
@@ -112,17 +124,15 @@ class FleeActor:
                             position=escape_pos,
                             tick=ctx.tick,
                         ),
-                    ]
-
-                    if old_state != "FLEEING":
-                        effects.append(EventRecord(
+                        EventRecord(
                             event_type="STATE_CHANGE",
                             source_id=ctx.entity["id"],
                             target_id=None,
                             position=list(ctx.entity["position"]),
-                            extra={"prev_state": old_state, "new_state": "FLEEING"},
+                            extra={"prev_state": ctx.entity["state"], "new_state": "FLEEING"},
                             tick=ctx.tick,
-                        ))
+                        ),
+                    ]
 
                     return effects  # First predator triggers flee; no need to check others
 

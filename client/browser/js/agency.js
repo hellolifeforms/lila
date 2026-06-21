@@ -19,6 +19,11 @@ import { hasReconcileTarget, getReconcileTarget, advanceReconcile } from './reco
 // Each entity also has _syncSpeed (0.4..1.0) that modulates this.
 const GRAVITY_WELL_FACTOR = 0.05;
 
+// Flee direction cache: how long (ms) to keep running in the last
+// known safe direction when no threat is found. Mirrors server
+// behavior: FleeActor computes escape once, guard exits on arrival.
+const FLEE_DIR_TIMEOUT_MS = 3000;
+
 /**
  * Run one frame of local agency for all mobile entities.
  * Called every render frame (~60 Hz).
@@ -204,6 +209,8 @@ function evaluateFleeing(ent, world, speciesDef) {
   const fleeTargets = speciesDef?.flee_targets || [];
   if (fleeTargets.length === 0) return evaluateWandering(ent, world);
 
+  const now = performance.now();
+
   // Find nearest threat
   let nearestThreat = null;
   let bestDistSq = Infinity;
@@ -219,18 +226,29 @@ function evaluateFleeing(ent, world, speciesDef) {
   }
 
   if (nearestThreat && bestDistSq < 400) { // ~20 world units sensory range²
-    // Flee away from threat
+    // Threat confirmed — cache the flee direction
     const dx = ent.x - nearestThreat.x;
     const dz = ent.z - nearestThreat.z;
     const dist = Math.sqrt(dx * dx + dz * dz) || 1;
+    ent._fleeDirX = dx / dist;
+    ent._fleeDirZ = dz / dist;
+    ent._fleeDirExpiry = now + FLEE_DIR_TIMEOUT_MS;
+  }
+
+  // Use cached flee direction as fallback.
+  // The server computes the escape target once (FleeActor fires on entry only)
+  // and holds it until arrival. Mirror this: if the threat is not found this
+  // frame (client/server divergence, stale positions, etc.), keep running in
+  // the last known safe direction for a short window.
+  if (ent._fleeDirX != null && now < ent._fleeDirExpiry) {
     return {
       type: 'flee',
-      targetX: clamp(ent.x + (dx / dist) * 8, GRID_SIZE),
-      targetZ: clamp(ent.z + (dz / dist) * 8, GRID_SIZE),
+      targetX: clamp(ent.x + ent._fleeDirX * 8, GRID_SIZE),
+      targetZ: clamp(ent.z + ent._fleeDirZ * 8, GRID_SIZE),
     };
   }
 
-  // No threat nearby — fall through to wander
+  // No threat and no cached direction — fall through to wander
   return evaluateWandering(ent, world);
 }
 

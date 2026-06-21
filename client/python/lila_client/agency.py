@@ -5,13 +5,13 @@
 # lila_client/agency.py — Client-side agency engine
 #
 # Between server ticks, each mobile entity decides what to do based on:
-  - Server intent (state + drives + eligibility flags)
-  - Local perception (nearest food, water, threats from world model)
-  - Motion latent (modulates speed, hesitation, path curvature)
-  - Gravity well toward server ref_position (continuous pull)
+#   - Server intent (state + drives + eligibility flags)
+#   - Local perception (nearest food, water, threats from world model)
+#   - Motion latent (modulates speed, hesitation, path curvature)
+#   - Gravity well toward server ref_position (continuous pull)
+#
+# This is the "body" in "server is nervous system, client is body."
 
-This is the "body" in "server is nervous system, client is body."
-"""
 
 from __future__ import annotations
 
@@ -29,6 +29,11 @@ from .world_model import WorldEntity
 # without overpowering the entity's desired behavior.
 # Each entity also has _sync_speed (0.4..1.0) that modulates this.
 GRAVITY_WELL_FACTOR = 0.05
+
+# Flee direction cache: how long (seconds) to keep running in the last
+# known safe direction when no threat is found. Mirrors server
+# behavior: FleeActor computes escape once, guard exits on arrival.
+FLEE_DIR_TIMEOUT = 3.0  # seconds
 
 
 def step_agency(world, dt: float) -> list[dict]:
@@ -199,10 +204,18 @@ def evaluate_behavior(ent: WorldEntity, world) -> dict[str, Any]:
 
 
 def evaluate_fleeing(ent: WorldEntity, world, species_def: dict) -> dict:
-    """Flee from nearest threat."""
+    """Flee from nearest threat.
+
+    Caches the last known flee direction so the entity keeps running
+    even when the threat is momentarily not found (client/server
+    position divergence). Mirrors server: FleeActor computes escape
+    once, guard exits on arrival.
+    """
     flee_targets = species_def.get("flee_targets", [])
     if not flee_targets:
         return evaluate_wandering(ent, world)
+
+    now = time.monotonic()
 
     nearest_threat: WorldEntity | None = None
     best_dist_sq = float("inf")
@@ -218,13 +231,24 @@ def evaluate_fleeing(ent: WorldEntity, world, species_def: dict) -> dict:
             nearest_threat = other
 
     if nearest_threat and best_dist_sq < 400:  # ~20 world units sensory range²
+        # Threat confirmed — cache the flee direction
         dx = ent.x - nearest_threat.x
         dz = ent.z - nearest_threat.z
         dist = math.sqrt(dx * dx + dz * dz) or 1
+        ent._flee_dir_x = dx / dist
+        ent._flee_dir_z = dz / dist
+        ent._flee_dir_expiry = now + FLEE_DIR_TIMEOUT
+
+    # Use cached flee direction as fallback.
+    # If the threat is not found this frame (position divergence, stale
+    # data, etc.), keep running in the last known safe direction.
+    flee_dir_x = getattr(ent, "_flee_dir_x", None)
+    flee_dir_expiry = getattr(ent, "_flee_dir_expiry", 0.0)
+    if flee_dir_x is not None and now < flee_dir_expiry:
         return {
             "type": "flee",
-            "target_x": clamp(ent.x + (dx / dist) * 8, GRID_SIZE),
-            "target_z": clamp(ent.z + (dz / dist) * 8, GRID_SIZE),
+            "target_x": clamp(ent.x + ent._flee_dir_x * 8, GRID_SIZE),
+            "target_z": clamp(ent.z + ent._flee_dir_z * 8, GRID_SIZE),
         }
 
     return evaluate_wandering(ent, world)

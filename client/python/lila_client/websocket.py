@@ -5,9 +5,9 @@
 # lila_client/websocket.py — WebSocket connection manager
 #
 # Handles connecting to the server, sending world definitions, receiving tick packets,
-and subscribing to telemetry events. Runs asyncio in a background thread with
-thread-safe queues for communication with the ImGui main loop.
-"""
+# and subscribing to telemetry events. Runs asyncio in a background thread with
+# thread-safe queues for communication with the ImGui main loop.
+
 
 from __future__ import annotations
 

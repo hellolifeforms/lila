@@ -5,8 +5,8 @@
 # lila_client/world_model.py — World Model (local scene graph)
 #
 # Mirrors the browser client's WorldModel for entity tracking and spatial queries.
-Used by both the ImGui renderer and the local agency system.
-"""
+# Used by both the ImGui renderer and the local agency system.
+
 
 from __future__ import annotations
 

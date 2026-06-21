@@ -5,11 +5,11 @@
 # lila_client/replay.py — Replay mode for post-mortem analysis
 #
 # Reads a session's JSONL telemetry log and replays events in the viewer,
-allowing you to scrub through time and inspect what happened at each tick.
+# allowing you to scrub through time and inspect what happened at each tick.
+#
+# Usage:
+#     lila-client-replay ~/.lila/logs/demo-alpha-001.jsonl [--speed 2.0]
 
-Usage:
-    lila-client-replay ~/.lila/logs/demo-alpha-001.jsonl [--speed 2.0]
-"""
 
 from __future__ import annotations
 

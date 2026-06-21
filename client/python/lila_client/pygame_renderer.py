@@ -5,8 +5,8 @@
 # lila_client/pygame_renderer.py — Pygame scene renderer
 #
 # Mirrors the browser client's canvas renderer: moisture heatmap, grid,
-water sources, and entities drawn as layered sprites.
-"""
+# water sources, and entities drawn as layered sprites.
+
 
 from __future__ import annotations
 
