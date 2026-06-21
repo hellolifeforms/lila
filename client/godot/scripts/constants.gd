@@ -1,6 +1,12 @@
 ## Shared constants mirroring browser/Python clients.
 class_name LilaConstants
 
+## Print with HH:MM:SS timestamp prefix.
+static func log(msg: Variant) -> void:
+	var t: Dictionary = Time.get_datetime_dict_from_system()
+	var ts: String = "%02d:%02d:%02d" % [t.hour, t.minute, t.second]
+	print("[%s] %s" % [ts, str(msg)])
+
 
 ## Grid dimensions (matches server voxel grid)
 const GRID_SIZE: int = 32

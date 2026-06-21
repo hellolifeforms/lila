@@ -48,7 +48,7 @@ func _load_world_json_local() -> void:
 	var err: Error = json_conv.parse(text)
 	if err == OK:
 		world_json_ready.emit(json_conv.data)
-		print("World JSON loaded from local file")
+		LilaConstants.log("World JSON loaded from local file")
 	else:
 		push_error("Failed to parse world.json: ", json_conv.get_error_message())
 
@@ -90,7 +90,7 @@ func _on_poll_timer() -> void:
 			_is_connected = false
 			_reconnect_timer = LilaConstants.RECONNECT_DELAY
 			disconnected.emit()
-			print("WebSocket closed (code ", code, "), reconnecting in ", LilaConstants.RECONNECT_DELAY, "s")
+			LilaConstants.log("WebSocket closed (code ", code, "), reconnecting in ", LilaConstants.RECONNECT_DELAY, "s")
 
 
 func _process(delta: float) -> void:
@@ -103,7 +103,7 @@ func _process(delta: float) -> void:
 func _connect_to_server() -> void:
 	_is_connecting = true
 	var url: String = "ws://" + host + ":" + str(port) + "/ws"
-	print("Connecting to ", url)
+	LilaConstants.log("Connecting to ", url)
 
 	# Fresh WebSocketPeer to avoid stale state from previous connection
 	_ws = WebSocketPeer.new()
@@ -126,12 +126,12 @@ func _connect_to_server() -> void:
 		_is_connected = true
 		_is_connecting = false
 		connected.emit()
-		print("WebSocket connected")
+		LilaConstants.log("WebSocket connected")
 
 		# Send world definition (always — works on reconnect)
 		if not _world_def_json.is_empty():
 			_ws.send_text(_world_def_json)
-			print("World definition sent")
+			LilaConstants.log("World definition sent")
 
 		# Flush any pending sends from before connection
 		for msg in _pending_sends:

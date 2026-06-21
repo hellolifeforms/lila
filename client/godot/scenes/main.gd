@@ -33,7 +33,7 @@ var _ground_mat: ShaderMaterial = null
 
 
 func _ready() -> void:
-	print("Lila Godot Client starting (3D — cube renderer)...")
+	LilaConstants.log("Lila Godot Client starting (3D — cube renderer)...")
 
 	WS.session_started.connect(_on_session_started)
 	WS.tick_packet.connect(_on_tick_packet)
@@ -171,7 +171,7 @@ func _on_world_json_ready(data: Dictionary) -> void:
 
 
 func _on_session_started(data: Dictionary) -> void:
-	print("Session started: ", data.get("session_id", ""))
+	LilaConstants.log("Session started: ", data.get("session_id", ""))
 	World.species_defs = data.get("species", {})
 	_session_started = true
 	World.flush_dead()
@@ -265,4 +265,4 @@ func _log_entity_telemetry() -> void:
 			ent.ack,
 			ent.reconcile_queue.size(),
 		]
-	print(log_line)
+	LilaConstants.log(log_line)
