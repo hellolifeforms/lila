@@ -65,6 +65,13 @@ class WorldEntity:
 	## Reconciliation tracking (mirrors browser/Python _lastReconciledTick)
 	var last_reconciled_tick: int = -10
 
+	## Flee persistence — cached direction + expiry so the entity keeps running
+	## even when the threat is momentarily not found (client/server divergence).
+	## Mirrors server behavior: FleeActor computes escape once, guard exits on arrival.
+	var flee_dir: Vector2 = Vector2.ZERO
+	var flee_dir_expiry: float = 0.0
+	const FLEE_DIR_TIMEOUT: float = 3.0  # seconds to keep fleeing on cached direction
+
 	func _init(entity_id: String, etype: String, especies: String):
 		id = entity_id
 		type = etype

@@ -141,20 +141,29 @@ func _evaluate_fleeing(ent, world: Node) -> Dictionary:
 	if flee_targets.is_empty():
 		return {"target": Vector2.ZERO}
 
+	var now: float = Time.get_ticks_msec() / 1000.0
 	var best: Variant = world.find_nearest(ent.x, ent.z, PackedStringArray(["ANIMAL", "BIRD"]))
-	if best == null or flee_targets.has(best.species):
-		if best != null:
-			# Flee away from threat
-			var away_x: float = ent.x - best.x
-			var away_z: float = ent.z - best.z
-			var len: float = sqrt(away_x * away_x + away_z * away_z)
-			if len > 0.01:
-				away_x /= len
-				away_z /= len
-				# Clamp to grid
-				var target_x: float = clampf(ent.x + away_x * 10.0, 0.0, float(LilaConstants.GRID_SIZE - 1))
-				var target_z: float = clampf(ent.z + away_z * 10.0, 0.0, float(LilaConstants.GRID_SIZE - 1))
-				return {"target": Vector2(target_x, target_z)}
+
+	if best != null and flee_targets.has(best.species):
+		# Threat confirmed — cache the flee direction
+		var away_x: float = ent.x - best.x
+		var away_z: float = ent.z - best.z
+		var len: float = sqrt(away_x * away_x + away_z * away_z)
+		if len > 0.01:
+			away_x /= len
+			away_z /= len
+			ent.flee_dir = Vector2(away_x, away_z)
+			ent.flee_dir_expiry = now + ent.FLEE_DIR_TIMEOUT
+
+	# Use cached flee direction as fallback.
+	# The server computes the escape target once (FleeActor fires on entry only)
+	# and holds it until arrival. Mirror this: if the threat is not found this
+	# frame (client/server divergence, stale positions, etc.), keep running in
+	# the last known safe direction for a short window.
+	if ent.flee_dir != Vector2.ZERO and now < ent.flee_dir_expiry:
+		var target_x: float = clampf(ent.x + ent.flee_dir.x * 10.0, 0.0, float(LilaConstants.GRID_SIZE - 1))
+		var target_z: float = clampf(ent.z + ent.flee_dir.y * 10.0, 0.0, float(LilaConstants.GRID_SIZE - 1))
+		return {"target": Vector2(target_x, target_z)}
 
 	return {"target": Vector2.ZERO}
 

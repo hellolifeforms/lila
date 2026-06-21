@@ -104,3 +104,20 @@ theme_override_font_sizes/font_size = 14
 layout_mode = 1
 text = "LMB: orbit/select  |  RMB: pan  |  Esc: deselect  |  R: rain"
 theme_override_font_sizes/font_size = 10
+
+[node name="LegendLabel" type="Label" parent="HUD"]
+visible = false
+layout_mode = 3
+anchors_preset = 2
+anchor_left = 0.75
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.15
+offset_left = 10.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = 80.0
+grow_horizontal = 4
+grow_vertical = 4
+text = ""
+theme_override_font_sizes/font_size = 12

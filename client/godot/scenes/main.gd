@@ -18,6 +18,7 @@ extends Node3D
 @onready var stats_label: Label = $HUD/VBox/StatsLabel
 @onready var event_log: RichTextLabel = $HUD/VBox/EventLog
 @onready var rain_button: Button = $HUD/VBox/RainButton
+@onready var legend_label: Label = $HUD/LegendLabel
 
 var _agency: Agency = Agency.new()
 var _heartbeat: HeartbeatSender = HeartbeatSender.new()
@@ -385,11 +386,13 @@ func _select_entity_at_click() -> void:
 ## Clear selection.
 func _deselect_entity() -> void:
 	_selected_entity = null
+	legend_label.visible = false
 
 ## Called when an entity is removed from the world.
 func _on_entity_removed(entity_id: String) -> void:
 	if _selected_entity and _selected_entity.id == entity_id:
 		_selected_entity = null
+		legend_label.visible = false
 
 ## Update the selection stats billboard on the HUD.
 func _update_selection_billboard() -> void:
@@ -407,8 +410,11 @@ func _update_selection_billboard() -> void:
 			ent.state,
 			_format_drives(ent)
 		]
+		legend_label.visible = true
+		legend_label.text = _build_legend(ent.type)
 	else:
 		selection_label.visible = false
+		legend_label.visible = false
 
 ## Return an emoji for the entity type.
 func _get_type_emoji(etype: String) -> String:
@@ -473,3 +479,33 @@ func _format_drives(ent) -> String:
 				parts.append("🔬%.0f" % (sv["activity"] * 100.0))
 
 	return " ".join(parts)
+
+## Build a legend explaining the stat icons for the given entity type.
+func _build_legend(etype: String) -> String:
+	var lines: Array[String] = []
+	lines.append("─ Stats ─")
+	match etype:
+		"ANIMAL", "BIRD":
+			lines.append("🍖 Hunger (0–100)")
+			lines.append("⚡ Energy (0–100)")
+			lines.append("💧 Hydration (0–100)")
+			lines.append("❤️ Health (0–100)")
+			lines.append("💕 Repro drive (0–100)")
+			lines.append("⏳ Age (ticks)")
+		"PLANT", "TREE":
+			lines.append("💧 Hydration (0–100)")
+			lines.append("🌱 Growth (0–100)")
+			lines.append("🧪 Nutrients (0–100)")
+			lines.append("❤️ Health (0–100)")
+			lines.append("⏳ Age (ticks)")
+		"INSECT":
+			lines.append("🍖 Hunger (0–100)")
+			lines.append("⚡ Energy (0–100)")
+			lines.append("🐝 Colony health (0–100)")
+			lines.append("💕 Repro drive (0–100)")
+		"MICROORGANISM":
+			lines.append("🧫 Population (0–100)")
+			lines.append("🔬 Activity (0–100)")
+		_:
+			lines.append("(no stats)")
+	return "\n".join(lines)

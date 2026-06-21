@@ -73,6 +73,14 @@ class MovementActor:
         if ctx.entity.get("_target") is not None:
             return []
 
+        # Skip FLEEING entities — let the guard actor handle exit.
+        # When _target is cleared on arrival, the guard transitions FLEEING
+        # → IDLE. If we set a wander target here (flow phase runs before
+        # guards), the guard sees _target is set and never exits FLEEING,
+        # trapping the entity in an energy-draining death spiral.
+        if ctx.entity["state"] == "FLEEING":
+            return []
+
         p = ctx.params
         if p is None:
             return []
