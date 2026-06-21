@@ -47,8 +47,15 @@ var _type_meshes: Dictionary = {}
 ## Fruiting wildflowers get a SphereMesh instead of a cube.
 func build_all_type_meshes() -> Dictionary:
 	var meshes: Dictionary = {}
-	for key in ["TREE", "ANIMAL", "INSECT", "PLANT_GRASS", "PLANT_FLOWER", "MICROORGANISM"]:
+	for key in ["TREE", "INSECT", "PLANT_GRASS", "PLANT_FLOWER", "MICROORGANISM"]:
 		meshes[key] = BoxMesh.new()
+	# Animals are horizontal capsules (deer body shape)
+	# Default CapsuleMesh is vertical — we tilt it on its side in the transform
+	var capsule: CapsuleMesh = CapsuleMesh.new()
+	capsule.radius = 1.0
+	capsule.height = 2.5
+	capsule.ring_count = 12
+	meshes["ANIMAL"] = capsule
 	# Birds are cones — pointy end faces forward
 	# ConeMesh removed in Godot 4, use CylinderMesh with top_radius = 0
 	var cone: CylinderMesh = CylinderMesh.new()
@@ -405,6 +412,9 @@ func _build_entity_transform(ent, size: float, tick_ms: float) -> Transform3D:
 	if ent.type == "BIRD":
 		# Tilt cone forward (points along +X) then steer around Y
 		rot = Basis.from_euler(Vector3(PI / 2.0, -angle + PI / 2.0, 0.0))
+	elif ent.type == "ANIMAL":
+		# Tilt capsule on its side (default is vertical) then steer around Y
+		rot = Basis.from_euler(Vector3(0.0, -angle + PI / 2.0, 0.0)) * Basis.from_euler(Vector3(0.0, 0.0, PI / 2.0))
 	else:
 		rot = Basis.from_euler(Vector3(0.0, -angle + PI / 2.0, 0.0))
 	# Insects are squished vertically to look more like flat flyers
