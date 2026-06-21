@@ -5,8 +5,8 @@
 # lila_client/main.py — Main entry point
 #
 # Usage:
-    lila-client [--host localhost] [--port 8001] [--world path/to/world.json]
-"""
+#     lila-client [--host localhost] [--port 8001] [--world path/to/world.json]
+
 
 from __future__ import annotations
 

@@ -5,13 +5,13 @@
 # lila_client/agency.py — Client-side agency engine
 #
 # Between server ticks, each mobile entity decides what to do based on:
-  - Server intent (state + drives + eligibility flags)
-  - Local perception (nearest food, water, threats from world model)
-  - Motion latent (modulates speed, hesitation, path curvature)
-  - Gravity well toward server ref_position (continuous pull)
+#   - Server intent (state + drives + eligibility flags)
+#   - Local perception (nearest food, water, threats from world model)
+#   - Motion latent (modulates speed, hesitation, path curvature)
+#   - Gravity well toward server ref_position (continuous pull)
+#
+# This is the "body" in "server is nervous system, client is body."
 
-This is the "body" in "server is nervous system, client is body."
-"""
 
 from __future__ import annotations
 

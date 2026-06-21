@@ -5,22 +5,22 @@
 # lila_client/reconciliation.py — Reconciliation (Client ↔ Server Position Sync)
 #
 # When a new tick packet arrives, reconcile client-agency positions
-with server reference positions. Trust the client within bounds;
-gently correct when divergence exceeds expected travel distance.
+# with server reference positions. Trust the client within bounds;
+# gently correct when divergence exceeds expected travel distance.
+#
+# Each tick, divergent entities get their ref_position enqueued as a
+# reconcile target. The agency system then smoothly meanders toward
+# that target over the next ~2 seconds. If a new target arrives before
+# the old one is reached, the entity transitions smoothly (no snap).
+#
+# Each entity has a unique sync personality (_sync_phase, _sync_speed)
+# so they don't all queue reconciliation targets at the same time —
+# the sync looks organic, not mechanical.
+#
+# Additionally, a continuous gravity well pulls all entities gently
+# toward their ref_position during normal agency, preventing sudden
+# direction changes when new tick targets arrive.
 
-Each tick, divergent entities get their ref_position enqueued as a
-reconcile target. The agency system then smoothly meanders toward
-that target over the next ~2 seconds. If a new target arrives before
-the old one is reached, the entity transitions smoothly (no snap).
-
-Each entity has a unique sync personality (_sync_phase, _sync_speed)
-so they don't all queue reconciliation targets at the same time —
-the sync looks organic, not mechanical.
-
-Additionally, a continuous gravity well pulls all entities gently
-toward their ref_position during normal agency, preventing sudden
-direction changes when new tick targets arrive.
-"""
 
 from __future__ import annotations
 
