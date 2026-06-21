@@ -1,6 +1,10 @@
-"""līlā Python Client — Client-side agency engine.
-
-Between server ticks, each mobile entity decides what to do based on:
+# līlā — Python Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# lila_client/agency.py — Client-side agency engine
+#
+# Between server ticks, each mobile entity decides what to do based on:
   - Server intent (state + drives + eligibility flags)
   - Local perception (nearest food, water, threats from world model)
   - Motion latent (modulates speed, hesitation, path curvature)

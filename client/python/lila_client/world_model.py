@@ -1,6 +1,10 @@
-"""līlā Python Client — World Model (local scene graph).
-
-Mirrors the browser client's WorldModel for entity tracking and spatial queries.
+# līlā — Python Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# lila_client/world_model.py — World Model (local scene graph)
+#
+# Mirrors the browser client's WorldModel for entity tracking and spatial queries.
 Used by both the ImGui renderer and the local agency system.
 """
 

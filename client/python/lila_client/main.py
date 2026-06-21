@@ -1,6 +1,10 @@
-"""līlā Python Client — Main entry point.
-
-Usage:
+# līlā — Python Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# lila_client/main.py — Main entry point
+#
+# Usage:
     lila-client [--host localhost] [--port 8001] [--world path/to/world.json]
 """
 

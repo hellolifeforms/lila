@@ -1,6 +1,10 @@
-"""līlā Python Client — Pygame scene renderer.
-
-Mirrors the browser client's canvas renderer: moisture heatmap, grid,
+# līlā — Python Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# lila_client/pygame_renderer.py — Pygame scene renderer
+#
+# Mirrors the browser client's canvas renderer: moisture heatmap, grid,
 water sources, and entities drawn as layered sprites.
 """
 

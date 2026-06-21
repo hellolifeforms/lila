@@ -1,6 +1,10 @@
-"""līlā Python Client — Replay mode for post-mortem analysis.
-
-Reads a session's JSONL telemetry log and replays events in the viewer,
+# līlā — Python Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# lila_client/replay.py — Replay mode for post-mortem analysis
+#
+# Reads a session's JSONL telemetry log and replays events in the viewer,
 allowing you to scrub through time and inspect what happened at each tick.
 
 Usage:

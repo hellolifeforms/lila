@@ -1,4 +1,11 @@
-"""līlā Python Client — Constants and Configuration."""
+# līlā — Python Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# lila_client/constants.py — Constants and Configuration
+#
+# Shared constants mirroring browser/Python clients. Covers grid dimensions,
+# tick rates, interaction cooldowns, reconciliation thresholds, and colors.
 
 import pathlib
 

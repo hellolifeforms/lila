@@ -1,6 +1,10 @@
-"""līlā Python Client — WebSocket connection manager.
-
-Handles connecting to the server, sending world definitions, receiving tick packets,
+# līlā — Python Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# lila_client/websocket.py — WebSocket connection manager
+#
+# Handles connecting to the server, sending world definitions, receiving tick packets,
 and subscribing to telemetry events. Runs asyncio in a background thread with
 thread-safe queues for communication with the ImGui main loop.
 """
