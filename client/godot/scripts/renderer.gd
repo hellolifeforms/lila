@@ -260,12 +260,15 @@ func update_ground_voxels(
 			for src: Dictionary in water_sources:
 				var src_pos: Vector2 = src.position
 				var radius: float = src.get("radius", 3.0)
+				var max_radius: float = src.get("max_radius", radius)
 				var level: float = src.get("water_level", 1.0)
 				if level < 0.02:
 					continue
 				var dist: float = cell_pos.distance_to(src_pos)
-				if dist <= radius:
-					var blend: float = (1.0 - dist / radius) * level
+				# Use max_radius for blend falloff so the water footprint fades
+				# with drought rather than just shrinking its visible area.
+				if dist <= max_radius:
+					var blend: float = (1.0 - dist / max_radius) * level
 					color = color.lerp(C_WATER, blend)
 					break
 

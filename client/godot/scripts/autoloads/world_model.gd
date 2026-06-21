@@ -203,10 +203,16 @@ func apply_water_sources(sources: Variant) -> void:
 	water_sources.clear()
 	for src: Dictionary in sources:
 		var pos: Variant = src.get("position", [0, 0, 0])
+		var current_radius: float = src.get("radius", 3.0)
+		var level: float = src.get("water_level", 1.0)
+		# Derive max_radius so the renderer can use the full footprint for blending
+		# (server sets radius = max_radius * water_level each tick)
+		var max_radius: float = current_radius / level if level > 0.01 else current_radius
 		water_sources.append({
 			"position": Vector2(_vec_x(pos), _vec_z(pos)),
-			"radius": src.get("radius", 3.0),
-			"water_level": src.get("water_level", 1.0),
+			"radius": current_radius,
+			"max_radius": max_radius,
+			"water_level": level,
 		})
 
 
