@@ -52,7 +52,7 @@ func build_all_type_meshes() -> Dictionary:
 	# Animals are horizontal capsules (deer body shape)
 	# Default CapsuleMesh is vertical — we tilt it on its side in the transform
 	var capsule: CapsuleMesh = CapsuleMesh.new()
-	capsule.radius = 1.0
+	capsule.radius = 0.55
 	capsule.height = 2.5
 	meshes["ANIMAL"] = capsule
 	# Birds are cones — pointy end faces forward
