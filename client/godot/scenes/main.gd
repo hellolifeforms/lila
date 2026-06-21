@@ -171,7 +171,7 @@ func _on_world_json_ready(data: Dictionary) -> void:
 
 
 func _on_session_started(data: Dictionary) -> void:
-	LilaConstants.log("Session started: ", data.get("session_id", ""))
+	LilaConstants.log("Session started: %s" % data.get("session_id", ""))
 	World.species_defs = data.get("species", {})
 	_session_started = true
 	World.flush_dead()

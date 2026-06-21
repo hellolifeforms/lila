@@ -90,7 +90,7 @@ func _on_poll_timer() -> void:
 			_is_connected = false
 			_reconnect_timer = LilaConstants.RECONNECT_DELAY
 			disconnected.emit()
-			LilaConstants.log("WebSocket closed (code ", code, "), reconnecting in ", LilaConstants.RECONNECT_DELAY, "s")
+			LilaConstants.log("WebSocket closed (code %d), reconnecting in %.1fs" % [code, LilaConstants.RECONNECT_DELAY])
 
 
 func _process(delta: float) -> void:
@@ -103,7 +103,7 @@ func _process(delta: float) -> void:
 func _connect_to_server() -> void:
 	_is_connecting = true
 	var url: String = "ws://" + host + ":" + str(port) + "/ws"
-	LilaConstants.log("Connecting to ", url)
+	LilaConstants.log("Connecting to %s" % url)
 
 	# Fresh WebSocketPeer to avoid stale state from previous connection
 	_ws = WebSocketPeer.new()
