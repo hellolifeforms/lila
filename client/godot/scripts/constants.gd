@@ -28,6 +28,7 @@ const RECONCILE_QUEUE_MAX: int = 2
 
 ## Agency
 const GRAVITY_WELL_FACTOR: float = 0.05
+const TURN_SPEED: float = 8.0  # radians per second for smooth facing interpolation
 const INTERACTION_COOLDOWN: float = 2.0
 const WANDER_MARGIN: float = 4.0
 const ARRIVAL_DISTANCE: float = 0.8

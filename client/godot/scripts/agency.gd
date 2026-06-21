@@ -106,13 +106,18 @@ func _execute_reconcile(ent, delta: float) -> void:
 
 	# Spiral meander toward target (organic movement)
 	var speed: float = 2.0 * ent.sync_speed
-	var angle: float = atan2(dz, dx)
+	var target_angle: float = atan2(dz, dx)
 	var wobble: float = sin(Time.get_ticks_msec() / 200.0 + ent.sync_phase) * 0.5
-	var move_x: float = cos(angle + wobble) * speed * delta
-	var move_z: float = sin(angle + wobble) * speed * delta
+	var move_angle: float = target_angle + wobble
+	var move_x: float = cos(move_angle) * speed * delta
+	var move_z: float = sin(move_angle) * speed * delta
 
 	ent.x += move_x
 	ent.z += move_z
+
+	# Smoothly interpolate facing direction (no instant snaps)
+	var angle_diff: float = wrapf(target_angle - ent.facing_angle, -PI, PI)
+	ent.facing_angle += clampf(angle_diff, -LilaConstants.TURN_SPEED * delta, LilaConstants.TURN_SPEED * delta)
 
 
 func _evaluate_fleeing(ent, world: Node) -> Dictionary:
@@ -356,7 +361,11 @@ func _move_toward(ent, target: Vector2, delta: float, world: Node) -> void:
 
 	ent.x += move_x
 	ent.z += move_z
-	ent.facing_angle = atan2(dz, dx)
+
+	# Smoothly interpolate facing direction (no instant snaps)
+	var target_angle: float = atan2(dz, dx)
+	var angle_diff: float = wrapf(target_angle - ent.facing_angle, -PI, PI)
+	ent.facing_angle += clampf(angle_diff, -LilaConstants.TURN_SPEED * delta, LilaConstants.TURN_SPEED * delta)
 
 	# Track target for wander persistence (mirrors Python/browser hasTarget)
 	ent.target_x = target.x
