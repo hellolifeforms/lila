@@ -213,10 +213,9 @@ func apply_water_sources(sources: Variant) -> void:
 ## Get alive mobile entities (animals, birds, insects).
 func get_alive_mobile() -> Array[WorldEntity]:
 	var result: Array[WorldEntity] = []
-	var mobile: PackedStringArray = PackedStringArray(LilaConstants.MOBILE_TYPES)
 	for eid in entities:
 		var ent: WorldEntity = entities[eid]
-		if ent.alive and mobile.has(ent.type):
+		if ent.alive and ent.type in ["ANIMAL", "BIRD", "INSECT"]:
 			result.append(ent)
 	return result
 
