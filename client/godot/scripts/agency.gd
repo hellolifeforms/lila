@@ -63,6 +63,10 @@ func _step_entity(ent, world: Node, delta: float, now: float) -> Array:
 		target = poll_result.get("target", Vector2.ZERO)
 		ent.last_action_type = "pollinating"
 		events.append_array(poll_result.get("events", []))
+	elif ent.type == "BIRD" and (ent.state == "RESTING" or ent.state == "IDLE"):
+		var roost_result: Dictionary = _evaluate_roosting(ent, world)
+		target = roost_result.get("target", Vector2.ZERO)
+		ent.last_action_type = "roosting"
 	else:
 		target = _evaluate_wandering(ent, delta)
 		ent.last_action_type = "wander"
@@ -332,6 +336,26 @@ func _evaluate_wandering(ent, delta: float) -> Vector2:
 	var target_z: float = clampf(ent.z + sin(angle) * wander_range, 0.0, float(LilaConstants.GRID_SIZE - 1))
 
 	return Vector2(target_x, target_z)
+
+
+func _evaluate_roosting(ent, world: Node) -> Dictionary:
+	# Find nearest tree to roost near
+	var best: Variant = world.find_nearest(ent.x, ent.z, PackedStringArray(["TREE"]))
+	if best == null:
+		return {"target": Vector2.ZERO}
+
+	var dx: float = best.x - ent.x
+	var dz: float = best.z - ent.z
+	var dist: float = sqrt(dx * dx + dz * dz)
+
+	if dist < LilaConstants.ARRIVAL_DISTANCE:
+		# Already near a tree — hover nearby instead of orbiting it
+		var wobble: float = sin(Time.get_ticks_msec() / 500.0 + ent.sync_phase) * 0.5
+		var hover_x: float = best.x + cos(wobble) * 1.5
+		var hover_z: float = best.z + sin(wobble) * 1.5
+		return {"target": Vector2(hover_x, hover_z)}
+
+	return {"target": Vector2(best.x, best.z)}
 
 
 func _move_toward(ent, target: Vector2, delta: float, world: Node) -> void:
