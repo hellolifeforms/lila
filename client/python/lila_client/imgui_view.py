@@ -1,4 +1,8 @@
-"""līlā Python Client — Dear PyGui debug viewer."""
+# līlā — Python Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# lila_client/imgui_view.py — Dear PyGui debug viewer
 
 from __future__ import annotations
 

@@ -1106,6 +1106,8 @@ class EcosystemEngine:
 
             update: dict[str, Any] = {
                 "id": eid,
+                "type": e["type"],
+                "species": e.get("species"),
                 "state": e["state"],
                 # Reference position — gravity well for reconciliation,
                 # not an authoritative command. Client may deviate.

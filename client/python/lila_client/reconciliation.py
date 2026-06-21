@@ -1,6 +1,10 @@
-"""līlā Python Client — Reconciliation (Client ↔ Server Position Sync).
-
-When a new tick packet arrives, reconcile client-agency positions
+# līlā — Python Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# lila_client/reconciliation.py — Reconciliation (Client ↔ Server Position Sync)
+#
+# When a new tick packet arrives, reconcile client-agency positions
 with server reference positions. Trust the client within bounds;
 gently correct when divergence exceeds expected travel distance.
 

@@ -1,0 +1,9 @@
+# Godot editor files
+*.import
+*.uid
+*.tscn.new
+*.godot/
+
+# OS files
+.DS_Store
+Thumbs.db
