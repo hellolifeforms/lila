@@ -164,12 +164,17 @@ func setup_type_meshes(parent: Node3D, meshes: Dictionary) -> Dictionary:
 	return result
 
 
+## Highlight color for the selected entity (bright white-yellow pulse).
+const C_HIGHLIGHT: Color = Color(1.0, 1.0, 0.85)
+const HIGHLIGHT_PULSE_FACTOR: float = 0.6
+
 ## Update all MultiMeshInstance3D instances for the current entity set.
 ## Sorts entities by type, then populates transforms + colors.
+## If sel_id is non-empty, that entity's instance is drawn in the highlight color.
 func update_entities(
 	type_meshes: Dictionary,
 	entities: Array,
-	face_dir: bool = true,
+	selected_id: String = "",
 ) -> void:
 	# Bucket entities by mesh key
 	var buckets: Dictionary = {}
@@ -211,6 +216,11 @@ func update_entities(
 			# Fruiting plants turn bright red (only flowers bloom, not grass)
 			if ent.type == "PLANT" and ent.state == "FRUITING" and ent.species == "wildflower":
 				color = C_FRUITING
+
+			# Selected entity: pulse between its normal color and highlight
+			if selected_id != "" and ent.id == selected_id:
+				var pulse: float = (sin(tick_ms / 200.0) + 1.0) * 0.5  # 0..1
+				color = color.lerp(C_HIGHLIGHT, HIGHLIGHT_PULSE_FACTOR + pulse * (1.0 - HIGHLIGHT_PULSE_FACTOR))
 
 			mm.set_instance_transform(i, transform)
 			mm.set_instance_custom_data(i, color)
