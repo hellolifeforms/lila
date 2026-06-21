@@ -412,8 +412,9 @@ func _build_entity_transform(ent, size: float, tick_ms: float) -> Transform3D:
 		# Tilt cone forward (points along +X) then steer around Y
 		rot = Basis.from_euler(Vector3(PI / 2.0, -angle + PI / 2.0, 0.0))
 	elif ent.type == "ANIMAL":
-		# Tilt capsule on its side (default is vertical) then steer around Y
-		rot = Basis.from_euler(Vector3(0.0, -angle + PI / 2.0, 0.0)) * Basis.from_euler(Vector3(0.0, 0.0, PI / 2.0))
+		# Steer around Y, then tilt capsule 90° around X so long axis lies horizontal
+		# and points in the direction of travel
+		rot = Basis.from_euler(Vector3(0.0, -angle + PI / 2.0, 0.0)) * Basis.from_euler(Vector3(PI / 2.0, 0.0, 0.0))
 	else:
 		rot = Basis.from_euler(Vector3(0.0, -angle + PI / 2.0, 0.0))
 	# Insects are squished vertically to look more like flat flyers
