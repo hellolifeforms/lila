@@ -1,5 +1,11 @@
-## Accumulates entity positions and agency events, sends heartbeats upstream.
-## Mirrors browser heartbeat.js.
+# līlā — Godot 4.x 3D Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# scripts/heartbeat.gd — Client heartbeat sender
+#
+# Accumulates entity positions and agency events, sends them to the server
+# at 1 Hz intervals. Mirrors browser heartbeat.js.
 class_name HeartbeatSender
 
 

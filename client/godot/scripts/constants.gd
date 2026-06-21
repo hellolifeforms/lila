@@ -1,4 +1,12 @@
-## Shared constants mirroring browser/Python clients.
+# līlā — Godot 4.x 3D Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# scripts/constants.gd — Shared constants for the Godot client
+#
+# Mirrors browser constants.js and server ecosystem constants. Covers
+# grid dimensions, tick rates, interaction cooldowns, reconciliation
+# thresholds, particle colors, and entity type palettes.
 class_name LilaConstants
 
 ## Print with HH:MM:SS timestamp prefix.

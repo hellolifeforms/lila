@@ -1,9 +1,15 @@
-## Orbit / trackball camera controller.
-## Attach as a script on a Camera3D node.
-##
-## Controls:
-##   Left  mouse drag — orbit around target
-##   Right mouse drag — pan target
+# līlā — Godot 4.x 3D Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# scripts/camera/orbit_camera.gd — Orbit / trackball camera controller
+#
+# Attach as a script on a Camera3D node.
+#
+# Controls:
+#   Left  mouse drag — orbit around target
+#   Right mouse drag — pan target
+#   Scroll — zoom in/out
 ##   Scroll wheel       — zoom in / out
 ##   R / Space          — forwarded (not consumed)
 

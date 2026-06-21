@@ -1,9 +1,14 @@
-## Position reconciliation between client agency and server reference positions.
-## Mirrors browser reconciliation.js and Python reconciliation.py.
-##
-## When a new tick packet arrives, reconcile client-agency positions
-## with server reference positions. Trust the client within bounds;
-## gently correct when divergence exceeds expected travel distance.
+# līlā — Godot 4.x 3D Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# scripts/reconciliation.gd — Position reconciliation
+#
+# Reconciles client-agency positions with server reference positions.
+# Mirrors browser reconciliation.js and Python reconciliation.py.
+#
+# When a new tick packet arrives, reconcile client positions within bounds;
+# gently correct when divergence exceeds expected travel distance.
 ##
 ## Each tick, divergent entities get their ref_position enqueued as a
 ## reconcile target. The agency system then smoothly meanders toward

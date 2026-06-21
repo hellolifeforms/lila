@@ -1,6 +1,11 @@
-## Main scene - 3D world view with orbit camera.
-## Grid coordinates map 1:1 to world X/Z; Y is height.
-## Uses simple cube-based InstancedMesh rendering per entity type.
+# līlā — Godot 4.x 3D Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# scenes/main.gd — Main scene: 3D world view with orbit camera
+#
+# Grid coordinates map 1:1 to world X/Z; Y is height.
+# Uses primitive-based MultiMeshInstance3D rendering per entity type.
 extends Node3D
 
 

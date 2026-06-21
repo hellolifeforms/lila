@@ -1,5 +1,11 @@
-## Client-side world model: entity registry, spatial queries, environment state.
-## Mirrors browser world-model.js and Python world_model.py.
+# līlā — Godot 4.x 3D Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# scripts/autoloads/world_model.gd — Client-side world model
+#
+# Entity registry, spatial queries, and environment state. Mirrors browser
+# world-model.js and Python world_model.py.
 extends Node
 
 

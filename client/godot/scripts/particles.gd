@@ -1,4 +1,11 @@
-## Simple particle system for event visualizations.
+# līlā — Godot 4.x 3D Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# scripts/particles.gd — Simple particle system for event visualizations
+#
+# Spawns particles for consumption, pollination, death, and other
+# ecosystem events. Particles are pooled and updated each frame.
 extends RefCounted
 
 

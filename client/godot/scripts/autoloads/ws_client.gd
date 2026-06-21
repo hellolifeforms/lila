@@ -1,5 +1,10 @@
-## WebSocket client for līlā server communication.
-## Handles /ws WebSocket connection, /world.json HTTP fetch, auto-reconnect.
+# līlā — Godot 4.x 3D Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# scripts/autoloads/ws_client.gd — WebSocket client for līlā server
+#
+# Handles /ws WebSocket connection, /world.json HTTP fetch, and auto-reconnect.
 extends Node
 
 

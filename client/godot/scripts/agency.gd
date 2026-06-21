@@ -1,6 +1,15 @@
-## Client-side agency engine — runs at 60 Hz between server ticks.
-## Mirrors browser agency.js and Python agency.py.
-## Server is the nervous system (intent), client is the body (execution).
+# līlā — Godot 4.x 3D Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# scripts/agency.gd — Client-side agency engine
+#
+# Runs at 60 Hz between server ticks, mirroring browser agency.js and
+# Python agency.py. The server is the nervous system (intent), the client
+# is the body (execution).
+#
+# Evaluates behavior priority chains for all mobile entities (animals,
+# birds, insects) and emits client-side interaction events.
 class_name Agency
 
 

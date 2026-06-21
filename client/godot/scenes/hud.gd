@@ -1,4 +1,8 @@
-## HUD overlay: stats panel, event log, controls.
+# līlā — Godot 4.x 3D Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# scenes/hud.gd — HUD overlay: stats panel, event log, controls
 extends CanvasLayer
 
 

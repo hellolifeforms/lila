@@ -1,6 +1,12 @@
-## Simple cube-based 3D entity renderer.
-## Each entity type gets a single BoxMesh (cube) with type-appropriate color
-## harmonized with the browser renderer palette.
+# līlā — Godot 4.x 3D Client
+# Copyright 2025 BioSynthArt Studios LLC
+# Licensed under the Apache License, Version 2.0
+#
+# scripts/renderer.gd — Primitive-based 3D entity renderer
+#
+# Each entity type gets a MeshInstance with type-appropriate shape and color,
+# harmonized with the browser renderer palette. Uses MultiMeshInstance3D
+# for efficient per-type instancing.
 extends Node
 
 
