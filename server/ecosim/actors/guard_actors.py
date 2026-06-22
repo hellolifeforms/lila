@@ -23,6 +23,7 @@ from ..constants import (
     DORMANCY_RECOVERY_EXIT_HEALTH,
     FLEE_MAX_DURATION,
     FLEE_REPRO_DRIVE_EXIT,
+    MIN_FORAGING_BOUT_FEEDS,
     POLLINATOR_VISIT_LIMIT,
     POLLINATOR_WANDER_COOLDOWN,
 )
@@ -272,18 +273,25 @@ class ConsumerGuardActor:
         # ── Foraging / Hunting (hysteresis) ──
         elif ctx.entity["state"] in ("FORAGING", "HUNTING"):
             if sv["hunger"] < p.hunger_exit:
-                # Pollinators transition to WANDERING instead of IDLE when satiated.
-                # This keeps them moving and searching for flowers rather than
-                # sitting still, which prevents FORAGING↔IDLE chattering after
-                # each pollination visit (relief drops hunger below exit threshold).
-                if p.floral_affinity:
-                    effects.append(StateTransition(
-                        entity_id=ctx.entity["id"], new_state="WANDERING", tick=ctx.tick,
-                    ))
-                else:
-                    effects.append(StateTransition(
-                        entity_id=ctx.entity["id"], new_state="IDLE", tick=ctx.tick,
-                    ))
+                # Feeding bout momentum: require a minimum number of successful
+                # feeding events before allowing exit from FORAGING/HUNTING.
+                # Without this, a single relief value (e.g. 0.10 from one kill)
+                # exceeds the hunger hysteresis gap (e.g. 0.105), causing the
+                # entity to exit after 1-2 bites, then rest for dozens of ticks.
+                bout_feeds = ctx.entity.get("_foraging_bout_feeds", 0)
+                if bout_feeds >= MIN_FORAGING_BOUT_FEEDS:
+                    # Pollinators transition to WANDERING instead of IDLE when satiated.
+                    # This keeps them moving and searching for flowers rather than
+                    # sitting still, which prevents FORAGING↔IDLE chattering after
+                    # each pollination visit (relief drops hunger below exit threshold).
+                    if p.floral_affinity:
+                        effects.append(StateTransition(
+                            entity_id=ctx.entity["id"], new_state="WANDERING", tick=ctx.tick,
+                        ))
+                    else:
+                        effects.append(StateTransition(
+                            entity_id=ctx.entity["id"], new_state="IDLE", tick=ctx.tick,
+                        ))
             elif self._should_hunt(ctx, p, sv):
                 effects.append(StateTransition(
                     entity_id=ctx.entity["id"], new_state="HUNTING", tick=ctx.tick,
@@ -312,6 +320,11 @@ class ConsumerGuardActor:
                 effects.append(StateTransition(
                     entity_id=ctx.entity["id"], new_state="FORAGING", tick=ctx.tick,
                 ))
+            # Reset feeding bout counter on entry to FORAGING/HUNTING.
+            effects.append(SetEntityAttr(
+                entity_id=ctx.entity["id"], attr_name="_foraging_bout_feeds",
+                value=0.0, tick=ctx.tick,
+            ))
 
         # ── Default ──
         else:

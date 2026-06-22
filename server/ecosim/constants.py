@@ -67,6 +67,19 @@ POLLINATION_MAX_LINGER = 10      # hard cap on linger ticks per visit
 
 # ── Predation & herbivory distances ───────────────────────────────────────────
 PREDATION_CATCH_DISTANCE = 1.5  # predator must be this close to catch
+
+# ── Feeding bout momentum ─────────────────────────────────────────────────────
+# Consumers need at least this many successful feeding events per FORAGING/HUNTING
+# bout before the hunger exit check is considered. Prevents the "one bite → exit
+# → rest for dozens of ticks" cycle where a single relief value exceeds the
+# hunger hysteresis gap.
+MIN_FORAGING_BOUT_FEEDS = 3
+
+# ── Omnivore population-based predation ────────────────────────────────────────
+# When an omnivore targets insect/pollinator prey, it only hunts if the living
+# prey count is at least this many. Below this, it ignores insects and forages
+# plants instead — prevents early extinction of small prey populations.
+OMNIVORE_INSECT_MIN_PREY_COUNT = 5
 HERBIVORY_CONSUME_DISTANCE = 2.0  # herbivore must be this close to eat
 POLLINATION_VISIT_DISTANCE = 2.0  # pollinator must be this close to visit a flower
 HERBIVORY_MIN_HUNGER = 0.2      # minimum hunger to trigger consumption
