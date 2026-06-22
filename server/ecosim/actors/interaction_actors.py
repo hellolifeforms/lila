@@ -35,6 +35,7 @@ from ..constants import (
     OM_DEPOSIT_MAX,
     OM_DEPOSIT_MIN,
     OM_DEPOSIT_SCALE,
+    OMNIVORE_INSECT_MIN_PREY_COUNT,
     POLLINATION_HEALTH_BOOST,
     POLLINATION_VISIT_DISTANCE,
     POLLINATOR_CROWD_RADIUS,
@@ -122,6 +123,15 @@ class FleeActor:
                         SetTarget(
                             entity_id=ctx.entity["id"],
                             position=escape_pos,
+                            tick=ctx.tick,
+                        ),
+                        # Track when fleeing started so the guard can enforce a timeout.
+                        # This prevents entities from being trapped in FLEEING
+                        # indefinitely (e.g. predator still in range after arrival).
+                        SetEntityAttr(
+                            entity_id=ctx.entity["id"],
+                            attr_name="_flee_start_tick",
+                            value=float(ctx.tick),
                             tick=ctx.tick,
                         ),
                         EventRecord(
@@ -213,6 +223,18 @@ class PredationActor:
         if not prey_species:
             return []
 
+        # Omnivore population-based check: skip insect/pollinator prey when
+        # population is too low. This prevents early extinction of small prey
+        # populations and lets omnivores fall back to plant food.
+        if p.diet_type == "omnivore":
+            living_insect_prey = self._count_living_insect_prey(p, ctx)
+            if living_insect_prey > 0 and living_insect_prey < OMNIVORE_INSECT_MIN_PREY_COUNT:
+                # Population too low — skip insect predation, let it forage plants
+                return []
+            elif living_insect_prey == 0:
+                # No insect prey alive — skip predation entirely
+                return []
+
         prey = None
         best_dist = float("inf")
         for other in ctx.nearby_entities:
@@ -242,6 +264,14 @@ class PredationActor:
                 entity_id=ctx.entity["id"],
                 var_name="energy",
                 delta=p.predation_energy_gain,
+                tick=ctx.tick,
+            ),
+            # Increment feeding bout counter so the guard requires
+            # MIN_FORAGING_BOUT_FEEDS before allowing FORAGING/HUNTING exit.
+            SetEntityAttr(
+                entity_id=ctx.entity["id"],
+                attr_name="_foraging_bout_feeds",
+                value=float(ctx.entity.get("_foraging_bout_feeds", 0) + 1),
                 tick=ctx.tick,
             ),
             # Prey is killed
@@ -289,6 +319,25 @@ class PredationActor:
         dx = a[0] - b[0]
         dz = a[2] - b[2]
         return math.sqrt(dx * dx + dz * dz)
+
+    @staticmethod
+    def _count_living_insect_prey(p: Any, ctx: Any) -> int:
+        """Count living prey species that match insect/pollinator diet tags."""
+        prey_species = []
+        diet_order = ctx.compiled.get_diet_order(p.species_id) if ctx.compiled else []
+        for target_species, _ in diet_order:
+            interactions = ctx.compiled.get_interactions(p.species_id, target_species)
+            if any(ix.interaction_type == "predation" for ix in interactions):
+                # Check if this prey is targeted by an insect diet tag
+                prey_species.append(target_species)
+        all_entities = getattr(ctx, "_entities", {})
+        if not all_entities:
+            return 0
+        return sum(
+            1 for e in all_entities.values()
+            if e.get("species") in prey_species
+            and e.get("state") not in ("DEAD", "DYING")
+        )
 
     @staticmethod
     def _compute_om_deposit(entity: dict, params: Any) -> float:
@@ -381,6 +430,14 @@ class HerbivoryActor:
                 source_id=ctx.entity["id"],
                 target_id=plant["id"],
                 position=list(plant["position"]),
+                tick=ctx.tick,
+            ),
+            # Increment feeding bout counter so the guard requires
+            # MIN_FORAGING_BOUT_FEEDS before allowing FORAGING/HUNTING exit.
+            SetEntityAttr(
+                entity_id=ctx.entity["id"],
+                attr_name="_foraging_bout_feeds",
+                value=float(ctx.entity.get("_foraging_bout_feeds", 0) + 1),
                 tick=ctx.tick,
             ),
         ]

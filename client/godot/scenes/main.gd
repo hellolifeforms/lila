@@ -404,10 +404,12 @@ func _update_selection_billboard() -> void:
 		selection_label.visible = true
 		var ent = _selected_entity
 		var type_emoji: String = _get_type_emoji(ent.type)
-		selection_label.text = "%s %s · %s\n%s" % [
+		var sex_text: String = _get_sex_display(ent)
+		selection_label.text = "%s %s · %s %s\n%s" % [
 			type_emoji,
 			ent.species.capitalize(),
 			ent.state,
+			sex_text,
 			_format_drives(ent)
 		]
 		legend_label.visible = true
@@ -415,6 +417,17 @@ func _update_selection_billboard() -> void:
 	else:
 		selection_label.visible = false
 		legend_label.visible = false
+
+## Return a sex display string (e.g. "♂" or "♀") for sexed entity types, or empty.
+func _get_sex_display(ent) -> String:
+	if ent.type not in ["ANIMAL", "BIRD", "INSECT"]:
+		return ""
+	match ent.sex:
+		"male":
+			return "♂"
+		"female":
+			return "♀"
+	return ""
 
 ## Return an emoji for the entity type.
 func _get_type_emoji(etype: String) -> String:
@@ -486,6 +499,7 @@ func _build_legend(etype: String) -> String:
 	lines.append("─ Stats ─")
 	match etype:
 		"ANIMAL", "BIRD":
+			lines.append("♂/♀ Sex (male/female)")
 			lines.append("🍖 Hunger (0–100)")
 			lines.append("⚡ Energy (0–100)")
 			lines.append("💧 Hydration (0–100)")
@@ -499,6 +513,7 @@ func _build_legend(etype: String) -> String:
 			lines.append("❤️ Health (0–100)")
 			lines.append("⏳ Age (ticks)")
 		"INSECT":
+			lines.append("♂/♀ Sex (male/female)")
 			lines.append("🍖 Hunger (0–100)")
 			lines.append("⚡ Energy (0–100)")
 			lines.append("🐝 Colony health (0–100)")
