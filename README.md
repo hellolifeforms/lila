@@ -78,6 +78,7 @@ Browser client (60 Hz)  │  Python debug client (60 Hz)  │  Godot 3D client (
 - **ASAL-compatible search** — `Init(θ) / Step(θ) / Render(θ)` substrate. Diversity-driven GA with CLIP evaluation produces a UMAP atlas of discovered ecosystems.
 
 ## Ecosystem search
+![Godot 3D client](docs/assets/atlas.png)
 
 ```bash
 cd search && uv sync
