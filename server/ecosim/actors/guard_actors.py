@@ -21,6 +21,8 @@ from ..constants import (
     CARNIVORE_HUNT_HUNGER,
     DEHYDRATION_HYDRATION,
     DORMANCY_RECOVERY_EXIT_HEALTH,
+    FLEE_MAX_DURATION,
+    FLEE_REPRO_DRIVE_EXIT,
     POLLINATOR_VISIT_LIMIT,
     POLLINATOR_WANDER_COOLDOWN,
 )
@@ -191,7 +193,27 @@ class ConsumerGuardActor:
 
         # ── Fleeing (managed by interaction resolver) ──
         elif ctx.entity["state"] == "FLEEING":
+            flee_exit = False
+
+            # Exit when escape target is reached (normal path).
             if ctx.entity.get("_target") is None:
+                flee_exit = True
+
+            # Timeout: force exit after FLEE_MAX_DURATION ticks.
+            # Prevents entities from being trapped in FLEEING indefinitely
+            # (e.g. predator still within sensory range after arrival).
+            else:
+                flee_start = ctx.entity.get("_flee_start_tick", ctx.tick)
+                if ctx.tick - flee_start >= FLEE_MAX_DURATION:
+                    flee_exit = True
+
+            # High reproductive drive: abandon fleeing to seek a mate.
+            # This lets populations recover when individuals have strong
+            # reproductive pressure and the threat has passed or is distant.
+            if not flee_exit and sv.get("reproductive_drive", 0) > FLEE_REPRO_DRIVE_EXIT:
+                flee_exit = True
+
+            if flee_exit:
                 effects.append(StateTransition(
                     entity_id=ctx.entity["id"], new_state="IDLE", tick=ctx.tick,
                 ))

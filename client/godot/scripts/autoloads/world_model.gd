@@ -52,6 +52,9 @@ class WorldEntity:
 	var sync_phase: int = 0
 	var sync_speed: float = 1.0
 
+	## Sex ("male", "female", or "" for asexual types)
+	var sex: String = ""
+
 	## Rendering
 	var facing_angle: float = 0.0
 	var alive: bool = true
@@ -143,6 +146,10 @@ func apply_update(data: Dictionary) -> void:
 	ent.can_drink = data.get("_can_drink", false)
 	ent.ack = data.get("_ack", false)
 
+	# Sex — only for mobile consumer types
+	if ent.type in ["ANIMAL", "BIRD", "INSECT"]:
+		ent.sex = data.get("sex", "")
+
 
 ## Apply entity spawn from tick packet.
 func apply_spawn(data: Dictionary) -> void:
@@ -168,6 +175,10 @@ func apply_spawn(data: Dictionary) -> void:
 	var latent: Variant = data.get("motion_latent", [])
 	if latent is Array:
 		ent.motion_latent = PackedFloat32Array(latent)
+
+	# Sex — only for mobile consumer types
+	if ent.type in ["ANIMAL", "BIRD", "INSECT"]:
+		ent.sex = data.get("sex", "")
 
 	entities[eid] = ent
 	entity_spawned.emit(eid)

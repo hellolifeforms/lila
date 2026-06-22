@@ -30,6 +30,7 @@ from typing import Any
 from ..config import SIM_CONFIG
 from ..constants import (
     FLEE_ESCAPE_DISTANCE,
+    FLEE_MAX_DURATION,
     HERBIVORY_CONSUME_DISTANCE,
     HERBIVORY_MIN_HUNGER,
     OM_DEPOSIT_MAX,
@@ -122,6 +123,15 @@ class FleeActor:
                         SetTarget(
                             entity_id=ctx.entity["id"],
                             position=escape_pos,
+                            tick=ctx.tick,
+                        ),
+                        # Track when fleeing started so the guard can enforce a timeout.
+                        # This prevents entities from being trapped in FLEEING
+                        # indefinitely (e.g. predator still in range after arrival).
+                        SetEntityAttr(
+                            entity_id=ctx.entity["id"],
+                            attr_name="_flee_start_tick",
+                            value=float(ctx.tick),
                             tick=ctx.tick,
                         ),
                         EventRecord(

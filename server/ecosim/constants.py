@@ -71,6 +71,8 @@ HERBIVORY_CONSUME_DISTANCE = 2.0  # herbivore must be this close to eat
 POLLINATION_VISIT_DISTANCE = 2.0  # pollinator must be this close to visit a flower
 HERBIVORY_MIN_HUNGER = 0.2      # minimum hunger to trigger consumption
 FLEE_ESCAPE_DISTANCE = 8.0      # how far prey runs from predator
+FLEE_MAX_DURATION = 15           # max ticks in FLEEING before forced exit to IDLE
+FLEE_REPRO_DRIVE_EXIT = 0.6      # reproductive_drive above this exits FLEEING early
 CARNIVORE_HUNT_HUNGER = 0.5     # hunger above this → HUNTING instead of FORAGING
 
 # ── Movement ──────────────────────────────────────────────────────────────────

@@ -1134,6 +1134,10 @@ class EcosystemEngine:
                     sv.get("nutrient_store", 0.0), 4,
                 )
 
+            # Sex — sent for mobile consumer types (reproduction context)
+            if e["type"] in ("ANIMAL", "BIRD", "INSECT"):
+                update["sex"] = e.get("sex")
+
             # Motion latent — 4D vector encoding movement disposition
             if e.get("skeleton_id") or (params and params.speed > 0):
                 update["motion_latent"] = e.get(
@@ -1216,6 +1220,7 @@ class EcosystemEngine:
                     "id": s["id"],
                     "type": s["type"],
                     "species": s.get("species"),
+                    "sex": s.get("sex"),
                     "ref_position": [round(v, 4) for v in s["position"]],
                     "skeleton_id": s.get("skeleton_id"),
                     "state": s["state"],
