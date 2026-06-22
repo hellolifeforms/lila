@@ -30,10 +30,8 @@ from typing import Any
 from ..config import SIM_CONFIG
 from ..constants import (
     FLEE_ESCAPE_DISTANCE,
-    FLEE_MAX_DURATION,
     HERBIVORY_CONSUME_DISTANCE,
     HERBIVORY_MIN_HUNGER,
-    MIN_FORAGING_BOUT_FEEDS,
     OM_DEPOSIT_MAX,
     OM_DEPOSIT_MIN,
     OM_DEPOSIT_SCALE,
@@ -325,7 +323,6 @@ class PredationActor:
     @staticmethod
     def _count_living_insect_prey(p: Any, ctx: Any) -> int:
         """Count living prey species that match insect/pollinator diet tags."""
-        insect_groups = {"pollinator", "insect", "arthropod"}
         prey_species = []
         diet_order = ctx.compiled.get_diet_order(p.species_id) if ctx.compiled else []
         for target_species, _ in diet_order:
