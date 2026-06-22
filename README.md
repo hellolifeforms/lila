@@ -43,7 +43,7 @@ Browser client (60 Hz)  │  Python debug client (60 Hz)  │  Godot 3D client (
        │  └── heartbeat 1 Hz  │  │                            │  └── heartbeat 1 Hz
        │  intent 0.5 Hz       │  │                            │  intent 0.5 Hz
        │                      │  │                            │
-┌──────▼──────────────────────▼──▼─────────────────────────────▼───────┐
+┌──────▼──────────────────────▼──▼────────────────────────────▼────────┐
 │  Worker — async WS server, one port/session                          │
 │  Streams intent packets, absorbs heartbeats                          │
 └──────┬───────────────────────────────────────────────────────────────┘
