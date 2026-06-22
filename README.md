@@ -30,19 +30,23 @@ Open **http://localhost:8001**. A temperate meadow with deer, songbirds, butterf
 
 ![līlā ecosystem demo](docs/assets/demo.gif)
 
+The Godot 3D client provides an alternative 3D perspective with orbit camera, entity selection, and real-time drive visualization:
+
+![Godot 3D client](docs/assets/godot_debug.png)
+
 ## Architecture
 
 ```
-Browser client (60 Hz)  │  Python debug client (60 Hz)
-   agency + heartbeat     agency + replay
-       │  │                   │  │
-       │  └── heartbeat 1 Hz  │  │
-       │  intent 0.5 Hz       │  │ WebSocket
-       │                      │  │
-┌──────▼──────────────────────▼──▼────────────┐
-│  Worker — async WS server, one port/session │
-│  Streams intent packets, absorbs heartbeats │
-└──────┬──────────────────────────────────────┘
+Browser client (60 Hz)  │  Python debug client (60 Hz)  │  Godot 3D client (60 Hz)
+   agency + heartbeat     agency + replay                  agency + 3D view
+       │  │                   │  │                            │  │
+       │  └── heartbeat 1 Hz  │  │                            │  └── heartbeat 1 Hz
+       │  intent 0.5 Hz       │  │                            │  intent 0.5 Hz
+       │                      │  │                            │
+┌──────▼──────────────────────▼──▼─────────────────────────────▼───────┐
+│  Worker — async WS server, one port/session                         │
+│  Streams intent packets, absorbs heartbeats                         │
+└──────┬───────────────────────────────────────────────────────────────┘
        │
 ┌──────▼──────────────────────────────────────┐
 │  ecosim (stdlib Python)                     │
@@ -70,7 +74,7 @@ Browser client (60 Hz)  │  Python debug client (60 Hz)
 - **BYOM adapters** — plug in custom ML models for motor inference. The engine builds context vectors, calls `infer()`, and writes latent vectors back. Three levels defined: motor (implemented), behavior (designed), narrative (designed).
 - **VoxelGrid protocol** — sparse 3D grid with five layers (`nutrients_fast`, `nutrients_slow`, `moisture`, `temperature`, `organic_matter`). Abstract storage strategy via Protocol — `UniformVoxelGrid` is the current implementation, octree swap-in ready.
 - **Telemetry** — structured JSONL event stream written to `~/.lila/logs/` with WebSocket broadcast. Config snapshots, time-series aggregates, and event batching for training data and post-mortem replay.
-- **Two clients** — modular browser visualizer (client-side agency, reconciliation, recording) and Python debug client (ImGui view, telemetry timeline, JSONL replay).
+- **Three clients** — modular browser visualizer (client-side agency, reconciliation, recording), Python debug client (ImGui view, telemetry timeline, JSONL replay), and Godot 3D client (orbit camera, entity selection, drive visualization, client-side agency with intent-based reconciliation).
 - **ASAL-compatible search** — `Init(θ) / Step(θ) / Render(θ)` substrate. Diversity-driven GA with CLIP evaluation produces a UMAP atlas of discovered ecosystems.
 
 ## Ecosystem search

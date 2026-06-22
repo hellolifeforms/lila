@@ -936,11 +936,15 @@ Expand the shipped search pipeline from 17-dim rate tuning to trait-space search
 
 ---
 
-## Godot Client — 3D Visualization (Milestone 4, Partially Shipped)
+## Godot Client — 3D Visualization (Shipped)
 
 **Goal:** 3D visualization of trait-based ecosystems with orbit camera, intent-driven client agency, and real-time telemetry. Built with Godot 4.x (GDScript, `gl_compatibility` renderer).
 
+**Status:** Shipped and actively maintained. Core architecture complete with intent-based agency, reconciliation, entity selection, and HUD. Recent sync fixes (PR #90) brought the client inline with browser/Python behavior and added sex display, feeding bout momentum, and improved fleeing exit logic.
+
 The Godot client mirrors the architecture of the browser and Python clients: WebSocket connection → intent packet parsing → local agency at 60 Hz → heartbeat absorption upstream. It renders the world in 3D with an orbit camera, MultiMesh-based entity rendering, and a particle system for event visualization.
+
+**Documentation:** [`client/godot/README.md`](client/godot/README.md) — architecture, controls, key modules, development guide.
 
 ### Project Scaffolding (`client/godot/`)
 
@@ -1106,7 +1110,7 @@ Every 10 ticks, the client prints a debug line with entity position divergence s
 ```
 This mirrors the server's telemetry bus format for cross-referencing client vs. server state during debugging.
 
-### Sync Bugs Fixed (PR: `fix/godot-client-sync`)
+### Client Sync Fixes (PR #90, merged)
 
 Three critical bugs were identified by comparing Godot agency/reconciliation against the browser and Python clients:
 
@@ -1115,6 +1119,26 @@ Three critical bugs were identified by comparing Godot agency/reconciliation aga
 2. **Wander target regenerated every frame** — `_evaluate_wandering()` picked a new random target each frame, causing jitter as the entity chased a moving target. Combined with the facing_angle bias from `randf() * TAU * wobble + ent.facing_angle`, this also caused a slow "marching" drift. Fixed: track `has_target`/`last_action_type` to persist wander targets until reached.
 
 3. **Reconciliation missing `last_reconciled_tick`** — used `(tick % 4) == sync_phase` instead of tracking ticks since last reconcile. No queue pruning, no update on negligible divergence. Fixed: added `last_reconciled_tick` tracking, queue pruning, and proper stagger logic to match Python/browser.
+
+### Recent Additions (PR #90)
+
+Two feature commits landed alongside the sync fixes:
+
+**Feeding bout momentum and population-based predation guards:**
+- `MIN_FORAGING_BOUT_FEEDS = 3` — entities must complete at least 3 successful feeding events before FORAGING/HUNTING exit is allowed. Prevents the 'one bite → exit → rest 37 ticks' cycle where a single relief value exceeds the hunger hysteresis gap.
+- `OMNIVORE_INSECT_MIN_PREY_COUNT = 5` — omnivores skip insect/pollinator predation when living prey count is below 5. Prevents early extinction of small prey populations and lets omnivores fall back to plant foraging.
+- `_foraging_bout_feeds` counter: reset on FORAGING/HUNTING entry, incremented on each successful predation or herbivory event.
+
+**Sex display for mobile consumers:**
+- Sex field serialization in engine (updates + spawns) for ANIMAL/BIRD/INSECT
+- Sex field on WorldEntity applied on updates/spawns
+- Sex symbol (♂/♀) in selection billboard for sexed entity types
+- Sex info in the drive legend for ANIMAL, BIRD, INSECT types
+
+**Improved fleeing exit logic:**
+- `FLEE_MAX_DURATION = 15` — force exit FLEEING after 15 ticks
+- `FLEE_REPRO_DRIVE_EXIT = 0.6` — abandon fleeing when reproductive drive exceeds threshold
+- `_flee_start_tick` tracking in FleeActor so guard can enforce timeout
 
 ### Current Limitations
 
